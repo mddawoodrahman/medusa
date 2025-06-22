@@ -95,8 +95,10 @@ export const verifySecret = async ({
 
 export const getCurrentUser = async () => {
   try {
-    const { databases, account } = await createSessionClient();
+    const client = await createSessionClient();
+    if (!client) return null;  // Return null if no session
 
+    const { databases, account } = client;
     const result = await account.get();
 
     const user = await databases.listDocuments(
@@ -110,17 +112,20 @@ export const getCurrentUser = async () => {
     return parseStringify(user.documents[0]);
   } catch (error) {
     console.log(error);
+    return null;  // Return null on any error
   }
 };
 
 export const signOutUser = async () => {
-  const { account } = await createSessionClient();
-
   try {
-    await account.deleteSession("current");
+    const client = await createSessionClient();
+    if (client) {
+      const { account } = client;
+      await account.deleteSession("current");
+    }
     (await cookies()).delete("appwrite-session");
   } catch (error) {
-    handleError(error, "Failed to sign out user");
+    console.error("Failed to sign out user:", error);
   } finally {
     redirect("/sign-in");
   }

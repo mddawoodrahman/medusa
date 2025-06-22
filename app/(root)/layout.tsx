@@ -11,7 +11,11 @@ export const dynamic = "force-dynamic";
 const Layout = async ({ children }: { children: React.ReactNode }) => {
   const currentUser = await getCurrentUser();
 
-  if (!currentUser) return redirect("/sign-in");
+  if (!currentUser) {
+    // Redirect to sign-in page if no user is authenticated
+    redirect("/sign-in");
+    return null; // This line won't execute but TypeScript needs it
+  }
 
   return (
     <main className="flex h-screen">

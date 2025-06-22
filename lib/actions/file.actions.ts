@@ -214,9 +214,12 @@ export const deleteFile = async ({
 // ============================== TOTAL FILE SPACE USED
 export async function getTotalSpaceUsed() {
   try {
-    const { databases } = await createSessionClient();
+    const client = await createSessionClient();
+    if (!client) return null;  // Return null if no session
+
+    const { databases } = client;
     const currentUser = await getCurrentUser();
-    if (!currentUser) throw new Error("User is not authenticated.");
+    if (!currentUser) return null;
 
     const files = await databases.listDocuments(
       appwriteConfig.databaseId,
@@ -238,17 +241,11 @@ export async function getTotalSpaceUsed() {
       const fileType = file.type as FileType;
       totalSpace[fileType].size += file.size;
       totalSpace.used += file.size;
-
-      if (
-        !totalSpace[fileType].latestDate ||
-        new Date(file.$updatedAt) > new Date(totalSpace[fileType].latestDate)
-      ) {
-        totalSpace[fileType].latestDate = file.$updatedAt;
-      }
     });
 
     return parseStringify(totalSpace);
   } catch (error) {
-    handleError(error, "Error calculating total space used"); // Corrected error message
+    console.error("Error calculating total space used:", error);
+    return null;
   }
 }
