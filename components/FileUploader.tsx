@@ -11,20 +11,31 @@ import { MAX_FILE_SIZE } from "@/constants";
 import { useToast } from "@/hooks/use-toast";
 import { uploadFile } from "@/lib/actions/file.actions";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 
 interface Props {
-  ownerId: string;
-  accountId: string;
   className?: string;
 }
 
-const FileUploader = ({ ownerId, accountId, className }: Props) => {
+const FileUploader = ({ className }: Props) => {
   const path = usePathname();
+  const { userId } = useAuth();
   const { toast } = useToast();
   const [files, setFiles] = useState<File[]>([]);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
+      if (!userId) {
+        toast({
+          description: (
+            <p className="body-2 text-white">You must be signed in to upload files.</p>
+          ),
+          className: "error-toast",
+        });
+
+        return;
+      }
+
       setFiles(acceptedFiles);
 
       const uploadPromises = acceptedFiles.map(async (file) => {
@@ -44,7 +55,7 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
           });
         }
 
-        return uploadFile({ file, ownerId, accountId, path }).then(
+        return uploadFile({ file, path }).then(
           (uploadedFile) => {
             if (uploadedFile) {
               setFiles((prevFiles) =>
@@ -57,7 +68,7 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
 
       await Promise.all(uploadPromises);
     },
-    [ownerId, accountId, path, toast],
+    [path, toast, userId],
   );
 
   const { getRootProps, getInputProps } = useDropzone({ onDrop });

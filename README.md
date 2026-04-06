@@ -1,226 +1,258 @@
-# 🐍 Medusa
+# Medusa
 
-A modern storage management and file sharing platform.
+Medusa is a Next.js 15 file management app that uses Clerk for authentication and Appwrite for database and storage.
 
-Medusa is a sleek and powerful platform that lets users seamlessly upload, organize, and share files. Built with the latest Next.js 15, React 19, and the Appwrite Node SDK, Medusa offers a lightning-fast and intuitive experience for managing files with ease and security.
+## Table of contents
 
-## 📋 Table of Contents
+- [What This App Does](#what-this-app-does)
+- [Current Architecture](#current-architecture)
+- [Tech Stack](#tech-stack)
+- [Route Map](#route-map)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [Appwrite Schema](#appwrite-schema)
+- [Auth And Data Flow](#auth-and-data-flow)
+- [Scripts](#scripts)
+- [Recent Migration Notes](#recent-migration-notes)
+- [Troubleshooting](#troubleshooting)
 
-- [Tech Stack](#-tech-stack)
-- [Features](#-features)
-- [Project Structure](#-project-structure)
-- [Prerequisites](#-prerequisites)
-- [Installation](#-installation)
-- [Environment Variables](#-environment-variables)
-- [Running the Application](#-running-the-application)
-- [Appwrite Setup](#-appwrite-setup)
-- [Scripts](#-scripts)
-- [Dependencies](#-dependencies)
+## What This App Does
 
-## ⚙️ Tech Stack
+- Authenticates users with Clerk (sign in/sign up/sign out)
+- Uploads files to Appwrite Storage
+- Persists file metadata in Appwrite Database
+- Supports rename, delete, and shared-user list updates
+- Provides dashboard stats, type filtering, sorting, and search
+
+## Current Architecture
+
+- Frontend: Next.js App Router + React 19 + Tailwind + shadcn/ui
+- Auth: Clerk (`@clerk/nextjs`)
+- Data/storage: Appwrite (`node-appwrite` server SDK)
+- Server logic: Next.js Server Actions in `lib/actions`
+
+Important implementation details based on current code:
+
+- All non-auth routes are protected by Clerk middleware.
+- Auth pages use optional catch-all routes:
+   - `/sign-in/[[...rest]]`
+   - `/sign-up/[[...rest]]`
+- Root layout wraps app with `ClerkProvider`.
+- On first authenticated request, the app creates a user document in Appwrite if it does not exist.
+- File ownership is keyed by `clerkUserId`.
+
+## Tech Stack
 
 | Technology | Version | Purpose |
-|------------|---------|---------|
-| React | 19.0.0-rc | Frontend UI Library |
-| Next.js | 15.3.2 | React Framework with App Router |
-| Appwrite | 17.0.2 (Client) / 14.2.0 (Node) | Backend as a Service |
-| TailwindCSS | 3.4.1 | Utility-first CSS Framework |
-| ShadCN UI | - | Accessible UI Components |
-| TypeScript | 5.x | Type Safety |
-| Zod | 3.23.8 | Schema Validation |
-| React Hook Form | 7.53.1 | Form Management |
+| --- | --- | --- |
+| Next.js | 15.5.14 | App framework (App Router) |
+| React | 19.0.0-rc | UI rendering |
+| TypeScript | 5.x | Type safety |
+| Clerk | 7.0.8 | Authentication and identity |
+| node-appwrite | 14.2.0 | Appwrite server SDK |
+| appwrite | 17.0.2 | Appwrite client package |
+| Tailwind CSS | 3.4.1 | Styling |
+| Recharts | 2.13.3 | Dashboard charts |
 
-## 🔋 Features
+## Route Map
 
-### 👉 Appwrite Authentication
-Secure and reliable signup, login, and logout flows powered by Appwrite with OTP verification.
+- Public routes:
+   - `/sign-in/[[...rest]]`
+   - `/sign-up/[[...rest]]`
+- Protected routes:
+   - `/(root)` group, including dashboard and file type pages
 
-### 👉 File Uploads
-Upload images, videos, documents, audio files, and more—effortlessly with drag-and-drop support.
+## Project Structure
 
-### 👉 Complete File Management
-View, open in a new tab, rename, and delete files—all stored safely in Appwrite.
-
-### 👉 One-Click Downloads
-Access your uploaded files offline with quick and easy downloads.
-
-### 👉 File Sharing
-Generate shareable links to collaborate or share files with anyone.
-
-### 👉 Interactive Dashboard
-Stay informed with a dashboard that shows storage usage, recent uploads, and file statistics by type.
-
-### 👉 Global Search
-Quickly find any file or shared content using a powerful, platform-wide search with debounced input.
-
-### 👉 Flexible Sorting
-Sort files by name, date, or size to organize content your way.
-
-### 👉 Modern Responsive Design
-Minimal, beautiful, and fully responsive UI built with TailwindCSS and ShadCN for a smooth experience across devices.
-
-## 📁 Project Structure
-
-```
+```text
 medusa-main/
-├── app/                    # Next.js App Router pages and layouts
-│   ├── (auth)/            # Authentication routes (sign-in, sign-up)
-│   ├── (root)/            # Protected main application routes
-│   ├── fonts/             # Custom font files
-│   ├── globals.css        # Global styles and Tailwind directives
-│   └── layout.tsx         # Root layout with metadata
-├── components/            # React components
-│   └── ui/               # ShadCN UI components
-├── constants/            # Application constants and configuration
-├── hooks/                # Custom React hooks
-├── lib/                  # Utility functions and server actions
-│   ├── actions/          # Server actions for files and users
-│   └── appwrite/         # Appwrite client configuration
-├── public/               # Static assets
-│   └── assets/          # Icons and images
-└── types/               # TypeScript type definitions
+   app/
+      (auth)/
+         sign-in/[[...rest]]/page.tsx
+         sign-up/[[...rest]]/page.tsx
+      (root)/
+         layout.tsx
+         page.tsx
+         [type]/page.tsx
+      layout.tsx
+   components/
+   constants/
+   hooks/
+   lib/
+      actions/
+         file.actions.ts
+         user.actions.ts
+      appwrite/
+   scripts/
+      setup-appwrite.js
+   types/
 ```
 
-## 📋 Prerequisites
+## Getting Started
 
-- **Node.js** 18.x or later
-- **npm**, **yarn**, or **pnpm** package manager
-- **Appwrite** instance (Cloud or Self-hosted)
-- Modern web browser with JavaScript enabled
+### 1. Clone
 
-## 🚀 Installation
+```bash
+git clone https://github.com/your-username/medusa.git
+cd medusa
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-username/medusa.git
-   cd medusa
-   ```
+### 2. Install dependencies
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   # or
-   yarn install
-   # or
-   pnpm install
-   ```
+Preferred:
 
-3. **Set up environment variables** (see [Environment Variables](#-environment-variables))
+```bash
+bun install
+```
 
-4. **Run the development server**
-   ```bash
-   npm run dev
-   ```
+Alternative:
 
-5. **Open in browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
+```bash
+npm install
+```
 
-## 🔐 Environment Variables
+### 3. Configure environment
 
-Create a `.env.local` file in the root directory with the following variables:
+Copy `.env.example` to `.env.local` and fill in values.
+
+### 4. Set up Appwrite resources
+
+```bash
+node scripts/setup-appwrite.js
+```
+
+### 5. Run development server
+
+Preferred:
+
+```bash
+bun run dev
+```
+
+Alternative:
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Environment Variables
+
+Create `.env.local` in project root.
 
 ```env
-# Appwrite Configuration
+# Appwrite
 NEXT_PUBLIC_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 NEXT_PUBLIC_APPWRITE_PROJECT=your_project_id
+NEXT_PUBLIC_APPWRITE_PROJECT_ID=your_project_id
 NEXT_PUBLIC_APPWRITE_DATABASE=your_database_id
 NEXT_PUBLIC_APPWRITE_USERS_COLLECTION=your_users_collection_id
 NEXT_PUBLIC_APPWRITE_FILES_COLLECTION=your_files_collection_id
 NEXT_PUBLIC_APPWRITE_BUCKET=your_bucket_id
 NEXT_APPWRITE_KEY=your_appwrite_api_key
+
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+CLERK_SECRET_KEY=your_clerk_secret_key
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `NEXT_PUBLIC_APPWRITE_ENDPOINT` | Your Appwrite API endpoint |
-| `NEXT_PUBLIC_APPWRITE_PROJECT` | Appwrite project ID |
-| `NEXT_PUBLIC_APPWRITE_DATABASE` | Appwrite database ID |
-| `NEXT_PUBLIC_APPWRITE_USERS_COLLECTION` | Users collection ID |
-| `NEXT_PUBLIC_APPWRITE_FILES_COLLECTION` | Files collection ID |
-| `NEXT_PUBLIC_APPWRITE_BUCKET` | Storage bucket ID |
-| `NEXT_APPWRITE_KEY` | Server-side API key (keep secret!) |
+Notes:
 
-## 🏃 Running the Application
+- `NEXT_PUBLIC_APPWRITE_PROJECT` is used in app config.
+- `scripts/setup-appwrite.js` accepts either `NEXT_PUBLIC_APPWRITE_PROJECT_ID` or `NEXT_PUBLIC_APPWRITE_PROJECT`.
+- If you define both, keep them identical.
 
-### Development Mode
-```bash
-npm run dev
-```
-Runs with Next.js Turbopack for faster development builds.
+## Appwrite Schema
 
-### Production Build
-```bash
-npm run build
-npm run start
-```
+Users collection:
 
-### Linting
-```bash
-npm run lint
-```
-
-## 🗄️ Appwrite Setup
-
-### Required Collections
-
-#### Users Collection
 | Attribute | Type | Required |
-|-----------|------|----------|
-| `fullName` | String | Yes |
-| `email` | Email | Yes |
-| `avatar` | URL | Yes |
-| `accountId` | String | Yes |
+| --- | --- | --- |
+| fullName | String | Yes |
+| email | Email | Yes |
+| avatar | URL | Yes |
+| clerkUserId | String | Yes |
 
-#### Files Collection
+Files collection:
+
 | Attribute | Type | Required |
-|-----------|------|----------|
-| `name` | String | Yes |
-| `type` | String | Yes |
-| `extension` | String | Yes |
-| `url` | URL | Yes |
-| `size` | Integer | Yes |
-| `owner` | String | Yes |
-| `accountId` | String | Yes |
-| `bucketField` | String | Yes |
-| `users` | String[] | No |
+| --- | --- | --- |
+| name | String | Yes |
+| type | String | Yes |
+| extension | String | Yes |
+| url | URL | Yes |
+| size | Integer | Yes |
+| clerkUserId | String | Yes |
+| ownerName | String | Yes |
+| bucketField | String | Yes |
+| users | String[] | No |
 
-### Storage Bucket
-Create a storage bucket with the following settings:
-- **Maximum file size**: 50MB
-- **Allowed file extensions**: Configure based on your needs
-- **Enable file security**: Yes
+Bucket:
 
-## 📜 Scripts
+- Max size: 50MB
+- File security: enabled
 
-| Script | Command | Description |
-|--------|---------|-------------|
-| `dev` | `next dev --turbopack` | Start development server with Turbopack |
-| `build` | `next build` | Create production build |
-| `start` | `next start` | Start production server |
-| `lint` | `next lint` | Run ESLint |
+## Auth And Data Flow
 
-## 📦 Dependencies
+1. User signs in with Clerk.
+2. Clerk middleware protects non-auth routes.
+3. `getCurrentUser` reads Clerk `userId` on the server.
+4. If Appwrite user doc does not exist, app creates it using Clerk profile info.
+5. Upload writes file binary to Appwrite Storage and metadata to Appwrite Database.
+6. File list queries use `clerkUserId` ownership and shared emails.
 
-### Production Dependencies
-- **@hookform/resolvers** - Zod resolver for React Hook Form
-- **@radix-ui/*** - Accessible UI primitives (dialog, dropdown, etc.)
-- **appwrite** - Appwrite client SDK
-- **node-appwrite** - Appwrite server SDK
-- **react-dropzone** - Drag-and-drop file uploads
-- **recharts** - Chart components for dashboard
-- **use-debounce** - Debounce hook for search
-- **zod** - Schema validation
+Security note:
 
-### Dev Dependencies
-- **typescript** - Type checking
-- **tailwindcss** - CSS framework
-- **eslint** - Code linting
-- **prettier** - Code formatting
+- Current upload implementation creates storage files with `Permission.read(Role.any())`.
+- Keep this if you want public-read files by URL.
+- Change it in `lib/actions/file.actions.ts` if you require private file reads.
 
-## 📄 License
+## Scripts
 
-This project is open source and available under the [MIT License](LICENSE).
+| Script | Command | Purpose |
+| --- | --- | --- |
+| dev | `next dev --turbopack` | Start local dev server |
+| build | `next build` | Build production bundle |
+| start | `next start` | Start production server |
+| lint | `next lint` | Run lint checks |
 
----
+## Recent Migration Notes
 
-Medusa leverages cutting-edge tools and clean architecture to ensure scalability, reusability, and performance—ideal for both personal and collaborative use cases.
+Authentication was migrated from Appwrite auth to Clerk.
+
+- Removed OTP/session/account flows from Appwrite auth
+- Added Clerk middleware and provider
+- Switched identity references from `accountId` to `clerkUserId`
+- Updated user and file schemas in Appwrite setup script
+- Updated protected routing and auth pages for Clerk path routing
+
+If you have existing pre-migration data, migrate legacy records before production use:
+
+- Users: map old `accountId` to `clerkUserId`
+- Files: map old owner/account fields to `clerkUserId` and `ownerName`
+
+## Troubleshooting
+
+### Clerk SignIn/SignUp runtime route error
+
+If Clerk says SignIn/SignUp is not configured correctly:
+
+- Ensure routes are catch-all:
+   - `/sign-in/[[...rest]]/page.tsx`
+   - `/sign-up/[[...rest]]/page.tsx`
+- Ensure middleware leaves `/sign-in(.*)` and `/sign-up(.*)` public.
+
+### Unauthorized errors on file actions
+
+- Confirm Clerk keys are valid.
+- Confirm Appwrite user document is created with `clerkUserId`.
+- Confirm collection IDs and API key in env are correct.
+
+### Appwrite setup script project ID errors
+
+If setup script fails with project ID errors, set at least one of:
+
+- `NEXT_PUBLIC_APPWRITE_PROJECT`
+- `NEXT_PUBLIC_APPWRITE_PROJECT_ID`

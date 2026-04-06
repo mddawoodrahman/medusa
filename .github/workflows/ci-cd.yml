@@ -1,0 +1,65 @@
+name: CI Pipeline - Medusa App
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    env:
+      # Dummy safe values for CI (override with secrets if needed)
+      NEXT_PUBLIC_APPWRITE_ENDPOINT: https://cloud.appwrite.io/v1
+      NEXT_PUBLIC_APPWRITE_PROJECT: test_project
+      NEXT_PUBLIC_APPWRITE_DATABASE: test_db
+      NEXT_PUBLIC_APPWRITE_USERS_COLLECTION: users
+      NEXT_PUBLIC_APPWRITE_FILES_COLLECTION: files
+      NEXT_PUBLIC_APPWRITE_BUCKET: bucket
+      NEXT_APPWRITE_KEY: test_key
+
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: test_clerk_key
+      CLERK_SECRET_KEY: test_secret
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: npm install
+
+      - name: 🔍 Lint Check
+        run: npm run lint
+
+      - name: 🏗 Build Application
+        run: npm run build
+
+      - name: 🚀 Start App (Background)
+        run: |
+          npm run dev &
+          sleep 10
+
+      - name: 🌐 Health Check
+        run: curl -f http://localhost:3000 || exit 1
+
+      - name: 🔐 Auth Route Test
+        run: |
+          STATUS=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:3000)
+          if [ "$STATUS" != "307" ] && [ "$STATUS" != "302" ]; then
+            echo "Expected redirect for protected route, got $STATUS"
+            exit 1
+          fi
+
+      - name: 📄 Sign-in Page Test
+        run: curl -f http://localhost:3000/sign-in
+
+      - name: ✅ CI Completed
+        run: echo "All checks passed 🚀"

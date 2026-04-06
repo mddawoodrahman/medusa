@@ -15,23 +15,20 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import FileUploader from "@/components/FileUploader";
-import { signOutUser } from "@/lib/actions/user.actions";
+import { SignOutButton, useAuth } from "@clerk/nextjs";
 
 interface Props {
-  $id: string;
-  accountId: string;
   fullName: string;
   avatar: string;
   email: string;
 }
 
 const MobileNavigation = ({
-  $id: ownerId,
-  accountId,
   fullName,
   avatar,
   email,
 }: Props) => {
+  const { isSignedIn } = useAuth();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -102,20 +99,22 @@ const MobileNavigation = ({
           <Separator className="my-5 bg-light-200/20" />
 
           <div className="flex flex-col justify-between gap-5 pb-5">
-            <FileUploader ownerId={ownerId} accountId={accountId} />
-            <Button
-              type="submit"
-              className="mobile-sign-out-button"
-              onClick={async () => await signOutUser()}
-            >
-              <Image
-                src="/assets/icons/logout.svg"
-                alt="logo"
-                width={24}
-                height={24}
-              />
-              <p>Logout</p>
-            </Button>
+            <FileUploader />
+            <SignOutButton>
+              <Button
+                type="button"
+                className="mobile-sign-out-button"
+                disabled={!isSignedIn}
+              >
+                <Image
+                  src="/assets/icons/logout.svg"
+                  alt="logo"
+                  width={24}
+                  height={24}
+                />
+                <p>Logout</p>
+              </Button>
+            </SignOutButton>
           </div>
         </SheetContent>
       </Sheet>

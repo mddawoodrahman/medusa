@@ -15,8 +15,6 @@ declare interface SearchParamProps {
 
 declare interface UploadFileProps {
   file: File;
-  ownerId: string;
-  accountId: string;
   path: string;
 }
 declare interface GetFilesProps {
@@ -38,19 +36,14 @@ declare interface UpdateFileUsersProps {
 }
 declare interface DeleteFileProps {
   fileId: string;
-  bucketFileId: string;
   path: string;
 }
 
 declare interface FileUploaderProps {
-  ownerId: string;
-  accountId: string;
   className?: string;
 }
 
 declare interface MobileNavigationProps {
-  ownerId: string;
-  accountId: string;
   fullName: string;
   avatar: string;
   email: string;

@@ -5,16 +5,23 @@ import Header from "@/components/Header";
 import { getCurrentUser } from "@/lib/actions/user.actions";
 import { redirect } from "next/navigation";
 import { Toaster } from "@/components/ui/toaster";
+import { auth } from "@clerk/nextjs/server";
 
 export const dynamic = "force-dynamic";
 
 const Layout = async ({ children }: { children: React.ReactNode }) => {
+  const { userId } = await auth();
+
+  if (!userId) {
+    redirect("/sign-in");
+    return null;
+  }
+
   const currentUser = await getCurrentUser();
 
   if (!currentUser) {
-    // Redirect to sign-in page if no user is authenticated
     redirect("/sign-in");
-    return null; // This line won't execute but TypeScript needs it
+    return null;
   }
 
   return (
@@ -23,7 +30,7 @@ const Layout = async ({ children }: { children: React.ReactNode }) => {
 
       <section className="flex h-full flex-1 flex-col">
         <MobileNavigation {...currentUser} />
-        <Header userId={currentUser.$id} accountId={currentUser.accountId} />
+        <Header />
         <div className="main-content">{children}</div>
       </section>
 

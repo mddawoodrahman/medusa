@@ -1,9 +1,8 @@
 "use server";
 
-import { createAdminClient, createSessionClient } from "@/lib/appwrite";
+import { createAdminClient } from "@/lib/appwrite";
 import { InputFile } from "node-appwrite/file";
 import { appwriteConfig } from "@/lib/appwrite/config";
-// Import Permission and Role to set file access controls
 import { ID, Models, Query, Permission, Role } from "node-appwrite";
 import { constructFileUrl, getFileType, parseStringify } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
@@ -14,29 +13,45 @@ const handleError = (error: unknown, message: string) => {
   throw error;
 };
 
-export const uploadFile = async ({
-  file,
-  ownerId,
-  accountId,
-  path,
-}: UploadFileProps) => {
+const requireCurrentUser = async () => {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser?.clerkUserId) {
+    throw new Error("Unauthorized");
+  }
+
+  return currentUser;
+};
+
+const ensureFileOwner = async (fileId: string) => {
+  const { databases } = await createAdminClient();
+  const currentUser = await requireCurrentUser();
+
+  const file = await databases.getDocument(
+    appwriteConfig.databaseId,
+    appwriteConfig.filesCollectionId,
+    fileId,
+  );
+
+  if (file.clerkUserId !== currentUser.clerkUserId) {
+    throw new Error("Unauthorized");
+  }
+
+  return { databases, file };
+};
+
+export const uploadFile = async ({ file, path }: UploadFileProps) => {
   const { storage, databases } = await createAdminClient();
 
   try {
+    const currentUser = await requireCurrentUser();
     const inputFile = InputFile.fromBuffer(file, file.name);
 
-    // When creating the file in the bucket, add permissions for the user
     const bucketFile = await storage.createFile(
       appwriteConfig.bucketId,
       ID.unique(),
       inputFile,
-      [
-        // Grant read access to the user who owns the file using their accountId
-        Permission.read(Role.user(accountId)),
-        // Grant update (rename, etc.) and delete permissions to the owner
-        Permission.update(Role.user(accountId)),
-        Permission.delete(Role.user(accountId)),
-      ]
+      [Permission.read(Role.any())],
     );
 
     const fileDocument = {
@@ -45,10 +60,10 @@ export const uploadFile = async ({
       url: constructFileUrl(bucketFile.$id),
       extension: getFileType(bucketFile.name).extension,
       size: bucketFile.sizeOriginal,
-      owner: ownerId,
-      accountId,
+      clerkUserId: currentUser.clerkUserId,
+      ownerName: currentUser.fullName,
       users: [],
-      bucketField: bucketFile.$id, // Simply use the file ID as the bucket field
+      bucketField: bucketFile.$id,
     };
 
     const newFile = await databases
@@ -56,10 +71,9 @@ export const uploadFile = async ({
         appwriteConfig.databaseId,
         appwriteConfig.filesCollectionId,
         ID.unique(),
-        fileDocument
+        fileDocument,
       )
       .catch(async (error: unknown) => {
-        // If creating the document fails, delete the orphaned file from storage
         await storage.deleteFile(appwriteConfig.bucketId, bucketFile.$id);
         handleError(error, "Failed to create file document");
       });
@@ -80,7 +94,7 @@ const createQueries = (
 ) => {
   const queries = [
     Query.or([
-      Query.equal("owner", [currentUser.$id]),
+      Query.equal("clerkUserId", [currentUser.clerkUserId]),
       Query.contains("users", [currentUser.email]),
     ]),
   ];
@@ -109,10 +123,7 @@ export const getFiles = async ({
   const { databases } = await createAdminClient();
 
   try {
-    const currentUser = await getCurrentUser();
-
-    if (!currentUser) throw new Error("User not found");
-
+    const currentUser = await requireCurrentUser();
     const queries = createQueries(currentUser, types, searchText, sort, limit);
 
     const files = await databases.listDocuments(
@@ -121,7 +132,6 @@ export const getFiles = async ({
       queries,
     );
 
-    console.log({ files });
     return parseStringify(files);
   } catch (error) {
     handleError(error, "Failed to get files");
@@ -134,9 +144,9 @@ export const renameFile = async ({
   extension,
   path,
 }: RenameFileProps) => {
-  const { databases } = await createAdminClient();
-
   try {
+    const { databases } = await ensureFileOwner(fileId);
+
     const newName = `${name}.${extension}`;
     const updatedFile = await databases.updateDocument(
       appwriteConfig.databaseId,
@@ -159,9 +169,9 @@ export const updateFileUsers = async ({
   emails,
   path,
 }: UpdateFileUsersProps) => {
-  const { databases } = await createAdminClient();
-
   try {
+    const { databases } = await ensureFileOwner(fileId);
+
     const updatedFile = await databases.updateDocument(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
@@ -174,57 +184,40 @@ export const updateFileUsers = async ({
     revalidatePath(path);
     return parseStringify(updatedFile);
   } catch (error) {
-    handleError(error, "Failed to update file users"); // Corrected error message
+    handleError(error, "Failed to update file users");
   }
 };
 
-export const deleteFile = async ({
-  fileId,
-  path,
-}: DeleteFileProps) => {
-  const { databases, storage } = await createAdminClient();
+export const deleteFile = async ({ fileId, path }: DeleteFileProps) => {
+  const { storage } = await createAdminClient();
 
   try {
-    // Get the file document first to get the bucketField
-    const file = await databases.getDocument(
+    const { databases, file } = await ensureFileOwner(fileId);
+
+    await databases.deleteDocument(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
       fileId,
     );
 
-    // First, delete the document from the database
-    const deletedFile = await databases.deleteDocument(
-      appwriteConfig.databaseId,
-      appwriteConfig.filesCollectionId,
-      fileId,
-    );
-
-    // If the document is successfully deleted, delete the file from storage
-    if (deletedFile) {
-      await storage.deleteFile(appwriteConfig.bucketId, file.bucketField);
-    }
+    await storage.deleteFile(appwriteConfig.bucketId, file.bucketField);
 
     revalidatePath(path);
     return parseStringify({ status: "success" });
   } catch (error) {
-    handleError(error, "Failed to delete file"); // Corrected error message
+    handleError(error, "Failed to delete file");
   }
 };
 
-// ============================== TOTAL FILE SPACE USED
 export async function getTotalSpaceUsed() {
   try {
-    const client = await createSessionClient();
-    if (!client) return null;  // Return null if no session
-
-    const { databases } = client;
-    const currentUser = await getCurrentUser();
-    if (!currentUser) return null;
+    const { databases } = await createAdminClient();
+    const currentUser = await requireCurrentUser();
 
     const files = await databases.listDocuments(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
-      [Query.equal("owner", [currentUser.$id])],
+      [Query.equal("clerkUserId", [currentUser.clerkUserId])],
     );
 
     const totalSpace = {
@@ -234,7 +227,7 @@ export async function getTotalSpaceUsed() {
       audio: { size: 0, latestDate: "" },
       other: { size: 0, latestDate: "" },
       used: 0,
-      all: 2 * 1024 * 1024 * 1024 /* 2GB available bucket storage */,
+      all: 2 * 1024 * 1024 * 1024,
     };
 
     files.documents.forEach((file) => {
