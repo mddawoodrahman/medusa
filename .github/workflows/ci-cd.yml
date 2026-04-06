@@ -20,8 +20,9 @@ jobs:
       NEXT_PUBLIC_APPWRITE_BUCKET: bucket
       NEXT_APPWRITE_KEY: test_key
 
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: test_clerk_key
-      CLERK_SECRET_KEY: test_secret
+      # Syntactically valid test-format Clerk keys for CI runtime checks
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+      CLERK_SECRET_KEY: sk_test_dummy
 
     steps:
       - name: 📥 Checkout Repository
