@@ -1,23 +1,12 @@
 "use server";
 
-import { createAdminClient } from "@/lib/appwrite";
-import { appwriteConfig } from "@/lib/appwrite/config";
-import { Query, ID } from "node-appwrite";
-import { parseStringify } from "@/lib/utils";
-import { avatarPlaceholderUrl } from "@/constants";
 import { auth, currentUser as getClerkCurrentUser } from "@clerk/nextjs/server";
+import { revalidateTag } from "next/cache";
 
-const getUserByClerkId = async (clerkUserId: string) => {
-  const { databases } = await createAdminClient();
-
-  const result = await databases.listDocuments(
-    appwriteConfig.databaseId,
-    appwriteConfig.usersCollectionId,
-    [Query.equal("clerkUserId", [clerkUserId])],
-  );
-
-  return result.total > 0 ? result.documents[0] : null;
-};
+import { avatarPlaceholderUrl } from "@/constants";
+import { parseStringify } from "@/lib/utils";
+import { userRepository } from "@/lib/repositories/user.repository";
+import { createRequestId, logger } from "@/lib/observability/logger";
 
 const createAppwriteUserFromClerk = async (clerkUserId: string) => {
   const clerkUser = await getClerkCurrentUser();
@@ -39,24 +28,20 @@ const createAppwriteUserFromClerk = async (clerkUserId: string) => {
     clerkUser.username ||
     email.split("@")[0];
 
-  const { databases } = await createAdminClient();
+  const userDocument = await userRepository.createFromClerkProfile({
+    fullName,
+    email,
+    avatar: clerkUser.imageUrl || avatarPlaceholderUrl,
+    clerkUserId,
+  });
 
-  const userDocument = await databases.createDocument(
-    appwriteConfig.databaseId,
-    appwriteConfig.usersCollectionId,
-    ID.unique(),
-    {
-      fullName,
-      email,
-      avatar: clerkUser.imageUrl || avatarPlaceholderUrl,
-      clerkUserId,
-    },
-  );
-
+  revalidateTag(`user:${clerkUserId}`);
   return userDocument;
 };
 
 export const getCurrentUser = async () => {
+  const requestId = createRequestId();
+
   try {
     const { userId } = await auth();
 
@@ -64,7 +49,7 @@ export const getCurrentUser = async () => {
       return null;
     }
 
-    const existingUser = await getUserByClerkId(userId);
+    const existingUser = await userRepository.getByClerkUserId(userId);
 
     if (existingUser) {
       return parseStringify(existingUser);
@@ -76,9 +61,19 @@ export const getCurrentUser = async () => {
       return null;
     }
 
+    logger.info("Provisioned Appwrite profile from Clerk identity", {
+      requestId,
+      userId,
+      route: "user.actions.getCurrentUser",
+    });
+
     return parseStringify(newUser);
   } catch (error) {
-    console.log(error);
+    logger.error(
+      "Failed to resolve current user",
+      { requestId, route: "user.actions.getCurrentUser" },
+      error,
+    );
     return null;
   }
 };

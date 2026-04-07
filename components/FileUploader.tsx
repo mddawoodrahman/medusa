@@ -9,19 +9,90 @@ import Image from "next/image";
 import Thumbnail from "@/components/Thumbnail";
 import { MAX_FILE_SIZE } from "@/constants";
 import { useToast } from "@/hooks/use-toast";
-import { uploadFile } from "@/lib/actions/file.actions";
+import { createFileMetadata } from "@/lib/actions/file.actions";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
+import { Account, Client, Storage } from "appwrite";
 
 interface Props {
   className?: string;
 }
+
+type UploadInitiationResponse = {
+  upload: {
+    endpoint: string;
+    projectId: string;
+    bucketId: string;
+    fileId: string;
+    permissions: string[];
+    maxFileSizeBytes: number;
+  };
+  token: {
+    userId: string;
+    secret: string;
+    expire: string;
+  };
+};
 
 const FileUploader = ({ className }: Props) => {
   const path = usePathname();
   const { userId } = useAuth();
   const { toast } = useToast();
   const [files, setFiles] = useState<File[]>([]);
+
+  const uploadDirectlyToAppwrite = useCallback(
+    async (file: File) => {
+      const initiateResponse = await fetch("/api/upload/initiate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fileName: file.name, size: file.size }),
+      });
+
+      if (!initiateResponse.ok) {
+        throw new Error("Failed to initiate upload");
+      }
+
+      const initiation =
+        (await initiateResponse.json()) as UploadInitiationResponse;
+
+      const client = new Client()
+        .setEndpoint(initiation.upload.endpoint)
+        .setProject(initiation.upload.projectId);
+
+      const account = new Account(client);
+      const storage = new Storage(client);
+
+      await account.createSession(
+        initiation.token.userId,
+        initiation.token.secret,
+      );
+
+      try {
+        const uploaded = await storage.createFile(
+          initiation.upload.bucketId,
+          initiation.upload.fileId,
+          file,
+          initiation.upload.permissions,
+        );
+
+        await createFileMetadata({
+          bucketFileId: uploaded.$id,
+          fileName: uploaded.name,
+          size: uploaded.sizeOriginal,
+          path,
+        });
+      } finally {
+        try {
+          await account.deleteSession("current");
+        } catch {
+          // Session cleanup is best-effort to avoid failed uploads due to logout race conditions.
+        }
+      }
+    },
+    [path],
+  );
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -55,20 +126,30 @@ const FileUploader = ({ className }: Props) => {
           });
         }
 
-        return uploadFile({ file, path }).then(
-          (uploadedFile) => {
-            if (uploadedFile) {
-              setFiles((prevFiles) =>
-                prevFiles.filter((f) => f.name !== file.name),
-              );
-            }
-          },
-        );
+        return uploadDirectlyToAppwrite(file)
+          .then(() => {
+            setFiles((prevFiles) =>
+              prevFiles.filter((f) => f.name !== file.name),
+            );
+          })
+          .catch(() => {
+            toast({
+              description: (
+                <p className="body-2 text-white">
+                  Failed to upload <span className="font-semibold">{file.name}</span>.
+                </p>
+              ),
+              className: "error-toast",
+            });
+            setFiles((prevFiles) =>
+              prevFiles.filter((f) => f.name !== file.name),
+            );
+          });
       });
 
       await Promise.all(uploadPromises);
     },
-    [path, toast, userId],
+    [toast, uploadDirectlyToAppwrite, userId],
   );
 
   const { getRootProps, getInputProps } = useDropzone({ onDrop });

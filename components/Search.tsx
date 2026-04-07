@@ -41,7 +41,11 @@ const Search = () => {
         return;
       }
 
-      const files = await getFiles({ types: [], searchText: trimmedQuery });
+      const files = await getFiles({
+        types: [],
+        searchText: trimmedQuery,
+        limit: 8,
+      });
       setResults(files.documents);
       setOpen(true);
     };

@@ -9,7 +9,7 @@ import {
 import Image from "next/image";
 import React, { useState } from "react";
 import { usePathname } from "next/navigation";
-import { Separator } from "@radix-ui/react-separator";
+import { Separator } from "@/components/ui/separator";
 import { navItems } from "@/constants";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,20 @@ import { Button } from "@/components/ui/button";
 import FileUploader from "@/components/FileUploader";
 import ThemeToggle from "@/components/ThemeToggle";
 import { SignOutButton, useAuth } from "@clerk/nextjs";
+import { cva } from "class-variance-authority";
+
+const mobileHeader = cva("flex h-[60px] justify-between px-5 sm:hidden");
+const userRow = cva(
+  "my-3 flex items-center gap-2 rounded-full p-1 text-light-100 sm:justify-center sm:bg-brand/10 lg:justify-start lg:p-3",
+);
+const mobileNav = cva("flex flex-1 flex-col gap-1 text-brand");
+const mobileNavList = cva("flex flex-1 flex-col gap-4");
+const mobileNavItem = cva(
+  "flex h-[52px] w-full items-center justify-start gap-4 rounded-full px-6 text-light-100",
+);
+const mobileSignOutButton = cva(
+  "flex h-[52px] w-full items-center gap-4 rounded-full bg-brand/10 px-6 text-brand shadow-none transition-all hover:bg-brand/20",
+);
 
 interface Props {
   fullName: string;
@@ -34,7 +48,7 @@ const MobileNavigation = ({
   const pathname = usePathname();
 
   return (
-    <header className="mobile-header">
+    <header className={mobileHeader()}>
       <Image
         src="/assets/icons/logo-full-brand.svg"
         alt="logo"
@@ -54,7 +68,7 @@ const MobileNavigation = ({
         </SheetTrigger>
         <SheetContent className="shad-sheet h-screen px-3">
           <SheetTitle>
-            <div className="header-user">
+            <div className={userRow()}>
               <Image
                 src={avatar}
                 alt="avatar"
@@ -70,13 +84,13 @@ const MobileNavigation = ({
             <Separator className="mb-4 bg-light-200/20" />
           </SheetTitle>
 
-          <nav className="mobile-nav">
-            <ul className="mobile-nav-list">
+          <nav className={mobileNav()}>
+            <ul className={mobileNavList()}>
               {navItems.map(({ url, name, icon }) => (
                 <Link key={name} href={url} className="lg:w-full">
                   <li
                     className={cn(
-                      "mobile-nav-item",
+                      mobileNavItem(),
                       pathname === url && "shad-active",
                     )}
                   >
@@ -105,7 +119,7 @@ const MobileNavigation = ({
             <SignOutButton>
               <Button
                 type="button"
-                className="mobile-sign-out-button"
+                className={mobileSignOutButton()}
                 disabled={!isSignedIn}
               >
                 <Image

@@ -2,6 +2,7 @@
 
 import { Avatars, Client, Databases, Storage } from "node-appwrite";
 import { appwriteConfig } from "@/lib/appwrite/config";
+import { Users } from "node-appwrite";
 
 export const createAdminClient = async () => {
   const client = new Client()
@@ -18,6 +19,9 @@ export const createAdminClient = async () => {
     },
     get avatars() {
       return new Avatars(client);
+    },
+    get users() {
+      return new Users(client);
     },
   };
 };

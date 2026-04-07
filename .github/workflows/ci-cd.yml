@@ -35,32 +35,19 @@ jobs:
           cache: 'npm'
 
       - name: 📦 Install Dependencies
-        run: npm install
+        run: npm ci
+
+      - name: 🔎 Type Check
+        run: npm run typecheck
 
       - name: 🔍 Lint Check
         run: npm run lint
 
+      - name: 🧪 Test Suite
+        run: npm run test
+
       - name: 🏗 Build Application
         run: npm run build
-
-      - name: 🚀 Start App (Background)
-        run: |
-          npm run dev &
-          sleep 10
-
-      - name: 🌐 Health Check
-        run: curl -f http://localhost:3000 || exit 1
-
-      - name: 🔐 Auth Route Test
-        run: |
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:3000)
-          if [ "$STATUS" != "307" ] && [ "$STATUS" != "302" ]; then
-            echo "Expected redirect for protected route, got $STATUS"
-            exit 1
-          fi
-
-      - name: 📄 Sign-in Page Test
-        run: curl -f http://localhost:3000/sign-in
 
       - name: ✅ CI Completed
         run: echo "All checks passed 🚀"

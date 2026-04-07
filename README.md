@@ -103,13 +103,13 @@ cd medusa
 Preferred:
 
 ```bash
-bun install
+npm install
 ```
 
 Alternative:
 
 ```bash
-npm install
+npm ci
 ```
 
 ### 3. Configure environment
@@ -127,13 +127,13 @@ node scripts/setup-appwrite.js
 Preferred:
 
 ```bash
-bun run dev
+npm run dev
 ```
 
 Alternative:
 
 ```bash
-npm run dev
+npm run build && npm run start
 ```
 
 Open `http://localhost:3000`.
@@ -150,7 +150,9 @@ NEXT_PUBLIC_APPWRITE_PROJECT_ID=your_project_id
 NEXT_PUBLIC_APPWRITE_DATABASE=your_database_id
 NEXT_PUBLIC_APPWRITE_USERS_COLLECTION=your_users_collection_id
 NEXT_PUBLIC_APPWRITE_FILES_COLLECTION=your_files_collection_id
+NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION=your_file_shares_collection_id
 NEXT_PUBLIC_APPWRITE_BUCKET=your_bucket_id
+NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE=52428800
 NEXT_APPWRITE_KEY=your_appwrite_api_key
 
 # Clerk
@@ -200,23 +202,28 @@ Bucket:
 2. Clerk middleware protects non-auth routes.
 3. `getCurrentUser` reads Clerk `userId` on the server.
 4. If Appwrite user doc does not exist, app creates it using Clerk profile info.
-5. Upload writes file binary to Appwrite Storage and metadata to Appwrite Database.
-6. File list queries use `clerkUserId` ownership and shared emails.
+5. Upload initiation is handled by `/api/upload/initiate`.
+6. Browser uploads file binary directly to Appwrite Storage.
+7. Server action stores metadata after successful upload.
+8. File list queries use owner access and `file_shares` principals.
 
 Security note:
 
-- Current upload implementation creates storage files with `Permission.read(Role.any())`.
-- Keep this if you want public-read files by URL.
-- Change it in `lib/actions/file.actions.ts` if you require private file reads.
+- Files are private by default and never use public-read ACL.
+- Access is enforced by owner and explicit shares.
+- Download and view requests are served from `/api/files/download/:id` after authorization checks.
 
 ## Scripts
 
 | Script | Command | Purpose |
 | --- | --- | --- |
 | dev | `next dev --turbopack` | Start local dev server |
+| typecheck | `tsc --noEmit` | Validate strict TypeScript types |
+| lint | `eslint . --ext .ts,.tsx` | Run lint checks |
+| test | `npm run test:unit && npm run test:integration` | Run test suites |
 | build | `next build` | Build production bundle |
 | start | `next start` | Start production server |
-| lint | `next lint` | Run lint checks |
+| ci:verify | `npm ci && npm run typecheck && npm run lint && npm run test && npm run build` | Run CI quality gates |
 
 ## Recent Migration Notes
 

@@ -4,12 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test:unit": "jest --runInBand --testPathIgnorePatterns=/test/integration/",
+    "test:integration": "jest --runInBand test/integration --passWithNoTests",
+    "test:e2e": "jest --runInBand test/e2e --passWithNoTests",
+    "test": "npm run test:unit && npm run test:integration",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "test": "jest --runInBand",
+    "ci:verify": "npm ci && npm run typecheck && npm run lint && npm run test && npm run build",
     "test:watch": "jest --watch",
-    "test:ci": "jest --ci --runInBand --verbose"
+    "test:ci": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.0.8",
@@ -45,6 +50,8 @@
     "brace-expansion@^1.1.7": "1.1.13"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
+    "@eslint/js": "^9.39.4",
     "@types/jest": "^29.5.14",
     "@types/node": "^20",
     "@types/react": "^18",
@@ -61,6 +68,6 @@
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
     "ts-jest": "^29.2.5",
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   }
 }

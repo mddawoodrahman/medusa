@@ -1,5 +1,3 @@
-/* eslint-disable no-unused-vars */
-
 declare type FileType = "document" | "image" | "video" | "audio" | "other";
 
 declare interface ActionType {
@@ -13,15 +11,19 @@ declare interface SearchParamProps {
   searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
-declare interface UploadFileProps {
-  file: File;
+declare interface CreateFileMetadataProps {
+  bucketFileId: string;
+  fileName: string;
+  size: number;
   path: string;
 }
+
 declare interface GetFilesProps {
   types: FileType[];
   searchText?: string;
   sort?: string;
   limit?: number;
+  cursor?: string;
 }
 declare interface RenameFileProps {
   fileId: string;

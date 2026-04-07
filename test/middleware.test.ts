@@ -30,12 +30,18 @@ describe("middleware", () => {
     const module = require("../middleware");
     const middleware = module.default as (
       auth: { protect: () => Promise<void> },
-      req: { nextUrl: { pathname: string } },
+      req: { headers: { get: (key: string) => string | null }; nextUrl: { pathname: string } },
     ) => Promise<void>;
 
     const protect = jest.fn<() => Promise<void>>(async () => undefined);
 
-    await middleware({ protect }, { nextUrl: { pathname: "/dashboard" } });
+    await middleware(
+      { protect },
+      {
+        headers: { get: () => null },
+        nextUrl: { pathname: "/dashboard" },
+      },
+    );
 
     expect(protect).toHaveBeenCalledTimes(1);
   });
@@ -44,13 +50,25 @@ describe("middleware", () => {
     const module = require("../middleware");
     const middleware = module.default as (
       auth: { protect: () => Promise<void> },
-      req: { nextUrl: { pathname: string } },
+      req: { headers: { get: (key: string) => string | null }; nextUrl: { pathname: string } },
     ) => Promise<void>;
 
     const protect = jest.fn<() => Promise<void>>(async () => undefined);
 
-    await middleware({ protect }, { nextUrl: { pathname: "/sign-in" } });
-    await middleware({ protect }, { nextUrl: { pathname: "/sign-up/sso-callback" } });
+    await middleware(
+      { protect },
+      {
+        headers: { get: () => null },
+        nextUrl: { pathname: "/sign-in" },
+      },
+    );
+    await middleware(
+      { protect },
+      {
+        headers: { get: () => null },
+        nextUrl: { pathname: "/sign-up/sso-callback" },
+      },
+    );
 
     expect(protect).not.toHaveBeenCalled();
   });

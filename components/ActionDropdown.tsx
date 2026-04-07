@@ -37,7 +37,9 @@ const ActionDropdown = ({ file }: { file: Models.Document }) => {
   const [action, setAction] = useState<ActionType | null>(null);
   const [name, setName] = useState(file.name);
   const [isLoading, setIsLoading] = useState(false);
-  const [emails, setEmails] = useState<string[]>([]);
+  const [emails, setEmails] = useState<string[]>(
+    Array.isArray(file.users) ? file.users : [],
+  );
 
   const path = usePathname();
 
@@ -46,7 +48,7 @@ const ActionDropdown = ({ file }: { file: Models.Document }) => {
     setIsDropdownOpen(false);
     setAction(null);
     setName(file.name);
-    //   setEmails([]);
+    setEmails(Array.isArray(file.users) ? file.users : []);
   };
 
   const handleAction = async () => {
@@ -171,7 +173,7 @@ const ActionDropdown = ({ file }: { file: Models.Document }) => {
             >
               {actionItem.value === "download" ? (
                 <Link
-                  href={constructDownloadUrl(file.bucketFileId)}
+                  href={constructDownloadUrl(file.$id)}
                   download={file.name}
                   className="flex items-center gap-2"
                 >
