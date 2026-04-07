@@ -21,10 +21,10 @@ const config: Config = {
   			pink: '#EEA8FD',
   			orange: '#F9AB72',
   			light: {
-  				'100': '#333F4E',
-  				'200': '#A3B2C7',
-  				'300': '#F2F5F9',
-  				'400': '#F2F4F8'
+					'100': 'rgb(var(--light-100) / <alpha-value>)',
+					'200': 'rgb(var(--light-200) / <alpha-value>)',
+					'300': 'rgb(var(--light-300) / <alpha-value>)',
+					'400': 'rgb(var(--light-400) / <alpha-value>)'
   			},
   			dark: {
   				'100': '#04050C',

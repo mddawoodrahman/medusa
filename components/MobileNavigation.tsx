@@ -15,6 +15,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import FileUploader from "@/components/FileUploader";
+import ThemeToggle from "@/components/ThemeToggle";
 import { SignOutButton, useAuth } from "@clerk/nextjs";
 
 interface Props {
@@ -100,6 +101,7 @@ const MobileNavigation = ({
 
           <div className="flex flex-col justify-between gap-5 pb-5">
             <FileUploader />
+            <ThemeToggle mobile />
             <SignOutButton>
               <Button
                 type="button"

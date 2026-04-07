@@ -15,13 +15,36 @@ export const metadata: Metadata = {
   description: "Medusa - The only storage solution you need.",
 };
 
+const themeInitializerScript = `
+(() => {
+  try {
+    const storageKey = "medusa-theme";
+    const storedTheme = window.localStorage.getItem(storageKey);
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const resolvedTheme =
+      storedTheme === "dark" || storedTheme === "light"
+        ? storedTheme
+        : prefersDark
+          ? "dark"
+          : "light";
+
+    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+  } catch {
+    // Ignore storage and media query failures.
+  }
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitializerScript }} />
+      </head>
       <body className={`${poppins.variable} font-poppins antialiased`}>
         <ClerkProvider>{children}</ClerkProvider>
       </body>

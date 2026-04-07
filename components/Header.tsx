@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import Search from "@/components/Search";
 import FileUploader from "@/components/FileUploader";
+import ThemeToggle from "@/components/ThemeToggle";
 import { SignOutButton, useUser } from "@clerk/nextjs";
 
 const Header = () => {
@@ -15,6 +16,7 @@ const Header = () => {
       <Search />
       <div className="header-wrapper">
         <FileUploader />
+        <ThemeToggle />
         <SignOutButton>
           <Button
             type="button"
