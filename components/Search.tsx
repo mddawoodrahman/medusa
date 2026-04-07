@@ -76,6 +76,7 @@ const Search = () => {
           alt="Search"
           width={24}
           height={24}
+          className="dark:invert"
         />
         <Input
           value={query}

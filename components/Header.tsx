@@ -16,7 +16,7 @@ const headerContainer = cva(
 const headerActions = cva("flex min-w-fit items-center justify-center gap-4");
 
 const signOutButton = cva(
-  "flex h-[52px] min-w-[54px] items-center justify-center rounded-full bg-brand/10 p-0 text-brand shadow-none transition-all hover:bg-brand/20",
+  "flex h-[52px] min-w-[54px] items-center justify-center rounded-full bg-brand/10 p-0 text-brand shadow-none transition-all hover:bg-brand/20 dark:bg-light-300/20 dark:text-light-100 dark:hover:bg-light-300/30",
 );
 
 const Header = () => {

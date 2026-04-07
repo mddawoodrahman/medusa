@@ -23,7 +23,7 @@ const Sidebar = ({ fullName, avatar, email }: Props) => {
           alt="logo"
           width={160}
           height={50}
-          className="hidden h-auto lg:block"
+          className="hidden h-auto dark:brightness-0 dark:invert lg:block"
         />
 
         <Image

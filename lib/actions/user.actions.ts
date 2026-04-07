@@ -1,7 +1,6 @@
 "use server";
 
 import { auth, currentUser as getClerkCurrentUser } from "@clerk/nextjs/server";
-import { revalidateTag } from "next/cache";
 
 import { avatarPlaceholderUrl } from "@/constants";
 import { parseStringify } from "@/lib/utils";
@@ -35,7 +34,6 @@ const createAppwriteUserFromClerk = async (clerkUserId: string) => {
     clerkUserId,
   });
 
-  revalidateTag(`user:${clerkUserId}`);
   return userDocument;
 };
 

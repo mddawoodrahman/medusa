@@ -21,15 +21,15 @@ import { cva } from "class-variance-authority";
 
 const mobileHeader = cva("flex h-[60px] justify-between px-5 sm:hidden");
 const userRow = cva(
-  "my-3 flex items-center gap-2 rounded-full p-1 text-light-100 sm:justify-center sm:bg-brand/10 lg:justify-start lg:p-3",
+  "my-3 flex items-center gap-2 rounded-full p-1 text-light-100 sm:justify-center sm:bg-brand/10 sm:dark:bg-light-300/20 lg:justify-start lg:p-3",
 );
-const mobileNav = cva("flex flex-1 flex-col gap-1 text-brand");
+const mobileNav = cva("flex flex-1 flex-col gap-1 text-brand dark:text-light-100");
 const mobileNavList = cva("flex flex-1 flex-col gap-4");
 const mobileNavItem = cva(
   "flex h-[52px] w-full items-center justify-start gap-4 rounded-full px-6 text-light-100",
 );
 const mobileSignOutButton = cva(
-  "flex h-[52px] w-full items-center gap-4 rounded-full bg-brand/10 px-6 text-brand shadow-none transition-all hover:bg-brand/20",
+  "flex h-[52px] w-full items-center gap-4 rounded-full bg-brand/10 px-6 text-brand shadow-none transition-all hover:bg-brand/20 dark:bg-light-300/20 dark:text-light-100 dark:hover:bg-light-300/30",
 );
 
 interface Props {
@@ -54,7 +54,14 @@ const MobileNavigation = ({
         alt="logo"
         width={120}
         height={52}
-        className="h-auto"
+        className="h-auto dark:hidden"
+      />
+      <Image
+        src="/assets/icons/logo-full.svg"
+        alt="logo"
+        width={120}
+        height={52}
+        className="hidden h-auto dark:block"
       />
 
       <Sheet open={open} onOpenChange={setOpen}>
@@ -64,6 +71,7 @@ const MobileNavigation = ({
             alt="Search"
             width={30}
             height={30}
+            className="dark:invert"
           />
         </SheetTrigger>
         <SheetContent className="shad-sheet h-screen px-3">

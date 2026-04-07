@@ -210,6 +210,7 @@ const FileUploader = ({ className }: Props) => {
                   width={24}
                   height={24}
                   alt="Remove"
+                  className="dark:invert"
                   onClick={(e) => handleRemoveFile(e, file.name)}
                 />
               </li>
