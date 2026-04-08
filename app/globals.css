@@ -349,8 +349,17 @@
   }
 
   /* FileUploader */
+  .uploader-dropzone {
+    @apply relative flex flex-col items-center gap-2 rounded-2xl border border-dashed border-brand/40 p-1 transition-colors dark:border-light-300/30 !important;
+  }
+  .uploader-dropzone-active {
+    @apply border-brand bg-brand/10 dark:bg-light-300/10 !important;
+  }
   .uploader-button {
     @apply primary-btn h-[52px] gap-2 px-10 shadow-drop-1 !important;
+  }
+  .uploader-dropzone-hint {
+    @apply caption text-light-200 !important;
   }
   .uploader-preview-list {
     @apply fixed bottom-10 right-10 z-50 flex size-full h-fit max-w-[480px] flex-col gap-3 rounded-[20px] bg-white p-7 shadow-drop-3 dark:bg-dark-200 !important;

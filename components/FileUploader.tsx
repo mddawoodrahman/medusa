@@ -152,7 +152,11 @@ const FileUploader = ({ className }: Props) => {
     [toast, uploadDirectlyToAppwrite, userId],
   );
 
-  const { getRootProps, getInputProps } = useDropzone({ onDrop });
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
+    onDrop,
+    noClick: true,
+    noKeyboard: true,
+  });
 
   const handleRemoveFile = (
     e: React.MouseEvent<HTMLImageElement, MouseEvent>,
@@ -163,9 +167,19 @@ const FileUploader = ({ className }: Props) => {
   };
 
   return (
-    <div {...getRootProps()} className="cursor-pointer">
+    <div
+      {...getRootProps()}
+      className={cn(
+        "uploader-dropzone",
+        isDragActive && "uploader-dropzone-active",
+      )}
+    >
       <input {...getInputProps()} />
-      <Button type="button" className={cn("uploader-button", className)}>
+      <Button
+        type="button"
+        className={cn("uploader-button", className)}
+        onClick={open}
+      >
         <Image
           src="/assets/icons/upload.svg"
           alt="upload"
@@ -174,6 +188,9 @@ const FileUploader = ({ className }: Props) => {
         />{" "}
         <p>Upload</p>
       </Button>
+      <p className="uploader-dropzone-hint">
+        {isDragActive ? "Drop files to upload" : "Drag and drop files here"}
+      </p>
       {files.length > 0 && (
         <ul className="uploader-preview-list">
           <h4 className="h4 text-light-100">Uploading</h4>
