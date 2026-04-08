@@ -1,5 +1,4 @@
 import { Models } from "node-appwrite";
-import Link from "next/link";
 import Thumbnail from "@/components/Thumbnail";
 import { convertFileSize } from "@/lib/utils";
 import FormattedDateTime from "@/components/FormattedDateTime";
@@ -12,7 +11,12 @@ const Card = ({ file }: { file: Models.Document }) => {
       : file.ownerName || "Unknown owner";
 
   return (
-    <Link href={file.url} target="_blank" className="file-card">
+    <a
+      href={file.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="file-card"
+    >
       <div className="flex justify-between">
         <Thumbnail
           type={file.type}
@@ -38,7 +42,7 @@ const Card = ({ file }: { file: Models.Document }) => {
           By: {ownerName}
         </p>
       </div>
-    </Link>
+    </a>
   );
 };
 export default Card;

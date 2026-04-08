@@ -18,9 +18,14 @@ export async function GET(
 ) {
   const requestId = request.headers.get("x-request-id") ?? createRequestId();
   const { id } = await params;
-  const mode = request.nextUrl.searchParams.get("mode") === "download"
+  const requestedMode = request.nextUrl.searchParams.get("mode");
+  const mode = requestedMode === "download"
     ? "download"
-    : "view";
+    : requestedMode === "thumbnail"
+      ? "thumbnail"
+      : "view";
+  const thumbnailWidth = Number(request.nextUrl.searchParams.get("w") || 160);
+  const thumbnailHeight = Number(request.nextUrl.searchParams.get("h") || 160);
 
   const context = {
     requestId,
@@ -70,17 +75,30 @@ export async function GET(
     }
 
     const { storage } = await createAdminClient();
+    const storageFile = await storage.getFile(appwriteConfig.bucketId, bucketFileId);
 
-    const [storageFile, content] = await Promise.all([
-      storage.getFile(appwriteConfig.bucketId, bucketFileId),
-      mode === "download"
-        ? storage.getFileDownload(appwriteConfig.bucketId, bucketFileId)
-        : storage.getFileView(appwriteConfig.bucketId, bucketFileId),
-    ]);
+    let content: ArrayBuffer;
+
+    if (mode === "download") {
+      content = await storage.getFileDownload(appwriteConfig.bucketId, bucketFileId);
+    } else if (mode === "thumbnail") {
+      content = await storage.getFilePreview(
+        appwriteConfig.bucketId,
+        bucketFileId,
+        Number.isFinite(thumbnailWidth) ? thumbnailWidth : 160,
+        Number.isFinite(thumbnailHeight) ? thumbnailHeight : 160,
+      );
+    } else {
+      content = await storage.getFileView(appwriteConfig.bucketId, bucketFileId);
+    }
 
     const headers = new Headers({
-      "Content-Type": storageFile.mimeType || "application/octet-stream",
-      "Cache-Control": "private, max-age=60",
+      "Content-Type":
+        mode === "thumbnail" ? "image/webp" : storageFile.mimeType || "application/octet-stream",
+      "Cache-Control":
+        mode === "download"
+          ? "private, no-store"
+          : "private, max-age=300, stale-while-revalidate=86400",
       "X-Request-Id": requestId,
     });
 
