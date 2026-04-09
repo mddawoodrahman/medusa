@@ -2,6 +2,7 @@
 
 import { ID, Permission, Query, Role } from "node-appwrite";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { z } from "zod";
 
 import { appwriteConfig } from "@/lib/appwrite/config";
 import { createAdminClient } from "@/lib/appwrite";
@@ -19,6 +20,49 @@ const handleError = (
 ) => {
   logger.error(message, context, error);
   throw error;
+};
+
+const emailSchema = z.string().trim().toLowerCase().email();
+
+const buildDefaultTotalSpace = () => ({
+  image: { size: 0, latestDate: "" },
+  document: { size: 0, latestDate: "" },
+  video: { size: 0, latestDate: "" },
+  audio: { size: 0, latestDate: "" },
+  other: { size: 0, latestDate: "" },
+  used: 0,
+  all: 2 * 1024 * 1024 * 1024,
+});
+
+const normalizeAndValidateEmails = (emails: string[]) => {
+  const sanitizedEmails: string[] = [];
+  const invalidEmails: string[] = [];
+
+  for (const rawEmail of emails) {
+    const parsed = emailSchema.safeParse(rawEmail);
+
+    if (parsed.success) {
+      sanitizedEmails.push(parsed.data);
+      continue;
+    }
+
+    if (String(rawEmail || "").trim().length > 0) {
+      invalidEmails.push(rawEmail);
+    }
+  }
+
+  return {
+    sanitizedEmails: Array.from(new Set(sanitizedEmails)),
+    invalidEmails,
+  };
+};
+
+const isAppwriteNotFoundError = (error: unknown) => {
+  if (typeof error !== "object" || !error) {
+    return false;
+  }
+
+  return Number((error as { code?: unknown }).code) === 404;
 };
 
 const requireCurrentUser = async (requestId: string) => {
@@ -179,12 +223,38 @@ export const renameFile = async ({
     const { file, currentUser } = await ensureFileOwner(fileId, requestId);
 
     const newName = `${name}.${extension}`;
+    const previousName = String(file.name || "");
 
     await storage.updateFile(appwriteConfig.bucketId, file.bucketField, newName);
 
-    const updatedFile = await fileRepository.updateMetadata(fileId, {
-      name: newName,
-    });
+    let updatedFile;
+
+    try {
+      updatedFile = await fileRepository.updateMetadata(fileId, {
+        name: newName,
+      });
+    } catch (metadataError) {
+      try {
+        await storage.updateFile(
+          appwriteConfig.bucketId,
+          file.bucketField,
+          previousName,
+        );
+      } catch (rollbackError) {
+        logger.error(
+          "Failed to rollback storage filename after metadata update error",
+          {
+            requestId,
+            userId: currentUser.clerkUserId,
+            route: "file.actions.renameFile",
+            fileId,
+          },
+          rollbackError,
+        );
+      }
+
+      throw metadataError;
+    }
 
     revalidatePath(path);
     revalidateFileTags(currentUser.clerkUserId, fileId);
@@ -209,26 +279,27 @@ export const updateFileUsers = async ({
     const { storage } = await createAdminClient();
     const { file, currentUser } = await ensureFileOwner(fileId, requestId);
 
-    const sanitizedEmails = Array.from(
-      new Set(
-        emails
-          .map((email) => email.trim().toLowerCase())
-          .filter((email) => email.length > 0),
-      ),
-    );
+    const previousEmails = Array.isArray(file.users)
+      ? file.users
+          .map((email) => String(email || "").trim().toLowerCase())
+          .filter((email) => email.length > 0)
+      : [];
 
+    const { sanitizedEmails, invalidEmails } = normalizeAndValidateEmails(emails);
+
+    if (invalidEmails.length > 0) {
+      logger.warn("Rejected share update due to invalid emails", {
+        requestId,
+        userId: currentUser.clerkUserId,
+        route: "file.actions.updateFileUsers",
+        fileId,
+        invalidEmails,
+      });
+      throw new Error("Invalid email list");
+    }
+
+    const previousSharedClerkUserIds = await getSharedClerkUserIds(previousEmails);
     const sharedClerkUserIds = await getSharedClerkUserIds(sanitizedEmails);
-    const permissions = buildStoragePermissions(
-      currentUser.clerkUserId,
-      sharedClerkUserIds,
-    );
-
-    await storage.updateFile(
-      appwriteConfig.bucketId,
-      file.bucketField,
-      undefined,
-      permissions,
-    );
 
     await fileRepository.upsertFileShares({
       fileId,
@@ -239,6 +310,42 @@ export const updateFileUsers = async ({
     const updatedFile = await fileRepository.updateMetadata(fileId, {
       users: sanitizedEmails,
     });
+
+    const permissions = buildStoragePermissions(
+      currentUser.clerkUserId,
+      sharedClerkUserIds,
+    );
+
+    try {
+      await storage.updateFile(
+        appwriteConfig.bucketId,
+        file.bucketField,
+        undefined,
+        permissions,
+      );
+    } catch (storageError) {
+      try {
+        await fileRepository.upsertFileShares({
+          fileId,
+          ownerId: currentUser.clerkUserId,
+          principals: [...previousEmails, ...previousSharedClerkUserIds],
+        });
+        await fileRepository.updateMetadata(fileId, { users: previousEmails });
+      } catch (rollbackError) {
+        logger.error(
+          "Failed to rollback file share metadata after storage permission error",
+          {
+            requestId,
+            userId: currentUser.clerkUserId,
+            route: "file.actions.updateFileUsers",
+            fileId,
+          },
+          rollbackError,
+        );
+      }
+
+      throw storageError;
+    }
 
     revalidatePath(path);
     revalidateFileTags(currentUser.clerkUserId, fileId);
@@ -259,8 +366,23 @@ export const deleteFile = async ({ fileId, path }: DeleteFileProps) => {
     const { storage } = await createAdminClient();
     const { file, currentUser } = await ensureFileOwner(fileId, requestId);
 
+    try {
+      await storage.deleteFile(appwriteConfig.bucketId, file.bucketField);
+    } catch (storageError) {
+      if (!isAppwriteNotFoundError(storageError)) {
+        throw storageError;
+      }
+
+      logger.warn("Storage object already missing during delete", {
+        requestId,
+        userId: currentUser.clerkUserId,
+        route: "file.actions.deleteFile",
+        fileId,
+        bucketFileId: file.bucketField,
+      });
+    }
+
     await fileRepository.deleteMetadata(fileId);
-    await storage.deleteFile(appwriteConfig.bucketId, file.bucketField);
 
     revalidatePath(path);
     revalidateFileTags(currentUser.clerkUserId, fileId);
@@ -282,15 +404,7 @@ export async function getTotalSpaceUsed() {
 
     const files = await fileRepository.listOwnedFiles(currentUser.clerkUserId);
 
-    const totalSpace = {
-      image: { size: 0, latestDate: "" },
-      document: { size: 0, latestDate: "" },
-      video: { size: 0, latestDate: "" },
-      audio: { size: 0, latestDate: "" },
-      other: { size: 0, latestDate: "" },
-      used: 0,
-      all: 2 * 1024 * 1024 * 1024,
-    };
+    const totalSpace = buildDefaultTotalSpace();
 
     files.documents.forEach((file) => {
       const fileType = file.type as FileType;
@@ -312,7 +426,7 @@ export async function getTotalSpaceUsed() {
       requestId,
       route: "file.actions.getTotalSpaceUsed",
     }, error);
-    return null;
+    return buildDefaultTotalSpace();
   }
 }
 

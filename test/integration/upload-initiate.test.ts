@@ -80,7 +80,7 @@ describe("upload initiate route", () => {
 
     const response = await POST({
       headers: new Headers(),
-      json: async () => ({ fileName: "invoice.pdf" }),
+      json: async () => ({ fileName: "invoice.pdf", size: 1024 }),
     });
 
     const body = await response.json();
@@ -90,5 +90,24 @@ describe("upload initiate route", () => {
     expect(body.token.secret).toBe("secret_token");
     expect(body.upload.permissions.some((permission: string) => permission.includes("user:"))).toBe(true);
     expect(body.upload.permissions.some((permission: string) => permission.includes("any"))).toBe(false);
+    expect(typeof body.rateLimit.remaining).toBe("number");
+  });
+
+  it("returns 400 for invalid upload payload", async () => {
+    authMock.mockResolvedValue({ userId: "user_clerk_1" });
+    getCurrentUserMock.mockResolvedValue({
+      clerkUserId: "user_clerk_1",
+      email: "owner@example.com",
+      fullName: "Owner User",
+    });
+
+    const { POST } = require("../../app/api/upload/initiate/route");
+
+    const response = await POST({
+      headers: new Headers(),
+      json: async () => ({ fileName: "", size: 0 }),
+    });
+
+    expect(response.status).toBe(400);
   });
 });

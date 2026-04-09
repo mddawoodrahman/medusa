@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/appwrite";
 import { appwriteConfig } from "@/lib/appwrite/config";
 import { ID, Query } from "node-appwrite";
-import { unstable_cache } from "next/cache";
+import { logger } from "@/lib/observability/logger";
 
 type Principal = {
   clerkUserId: string;
@@ -24,10 +24,25 @@ type UpsertFileSharesInput = {
 };
 
 const fileSharesCollectionId = appwriteConfig.fileSharesCollectionId;
+const MAX_LIST_LIMIT = 100;
+const MAX_SHARED_FILE_IDS = 1000;
+
+const ALLOWED_SORT_FIELDS = new Set(["$createdAt", "name", "size"]);
 
 const parseSort = (sort: string) => {
-  const [sortBy = "$createdAt", orderBy = "desc"] = sort.split("-");
+  const [rawSortBy = "$createdAt", rawOrderBy = "desc"] = sort.split("-");
+  const sortBy = ALLOWED_SORT_FIELDS.has(rawSortBy) ? rawSortBy : "$createdAt";
+  const orderBy = rawOrderBy === "asc" ? "asc" : "desc";
+
   return { sortBy, orderBy };
+};
+
+const clampListLimit = (limit: number) => {
+  if (!Number.isFinite(limit)) {
+    return 20;
+  }
+
+  return Math.min(MAX_LIST_LIMIT, Math.max(1, Math.floor(limit)));
 };
 
 const listSharedFileIds = async (principal: Principal) => {
@@ -38,23 +53,52 @@ const listSharedFileIds = async (principal: Principal) => {
   const { databases } = await createAdminClient();
 
   try {
-    const shares = await databases.listDocuments(
-      appwriteConfig.databaseId,
-      fileSharesCollectionId,
-      [
+    const collectedIds = new Set<string>();
+    let cursor: string | undefined;
+
+    while (collectedIds.size < MAX_SHARED_FILE_IDS) {
+      const queries = [
         Query.equal("status", ["active"]),
         Query.or([
           Query.equal("principal", [principal.clerkUserId]),
           Query.equal("principal", [principal.email]),
         ]),
-        Query.limit(100),
-      ],
-    );
+        Query.limit(MAX_LIST_LIMIT),
+      ];
 
-    return Array.from(
-      new Set(shares.documents.map((share) => share.fileId).filter(Boolean)),
-    );
-  } catch {
+      if (cursor) {
+        queries.push(Query.cursorAfter(cursor));
+      }
+
+      const shares = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        fileSharesCollectionId,
+        queries,
+      );
+
+      for (const share of shares.documents) {
+        if (share.fileId) {
+          collectedIds.add(String(share.fileId));
+        }
+      }
+
+      if (shares.documents.length < MAX_LIST_LIMIT) {
+        break;
+      }
+
+      cursor = shares.documents[shares.documents.length - 1]?.$id;
+
+      if (!cursor) {
+        break;
+      }
+    }
+
+    return Array.from(collectedIds);
+  } catch (error) {
+    logger.error("Failed to resolve shared file ids", {
+      route: "file.repository.listSharedFileIds",
+      userId: principal.clerkUserId,
+    }, error);
     return [];
   }
 };
@@ -68,89 +112,65 @@ export const fileRepository = {
     limit = 20,
     cursor,
   }: ListFilesInput) => {
-    const cacheKey = [
-      "files",
-      principal.clerkUserId,
-      principal.email,
-      types.join(","),
-      searchText,
-      sort,
-      String(limit),
-      cursor ?? "",
+    const { databases } = await createAdminClient();
+    const sharedFileIds = await listSharedFileIds(principal);
+    const resolvedLimit = clampListLimit(limit);
+
+    const visibilityQueries: string[] = [
+      Query.equal("clerkUserId", [principal.clerkUserId]),
     ];
 
-    return unstable_cache(
-      async () => {
-        const { databases } = await createAdminClient();
-        const sharedFileIds = await listSharedFileIds(principal);
+    if (sharedFileIds.length > 0) {
+      visibilityQueries.push(Query.equal("$id", sharedFileIds));
+    } else if (!fileSharesCollectionId) {
+      // Backward compatibility while shared data migrates to file_shares.
+      visibilityQueries.push(Query.contains("users", [principal.email]));
+    }
 
-        const visibilityQueries: string[] = [
-          Query.equal("clerkUserId", [principal.clerkUserId]),
-        ];
+    const queries = [Query.or(visibilityQueries), Query.limit(resolvedLimit)];
 
-        if (sharedFileIds.length > 0) {
-          visibilityQueries.push(Query.equal("$id", sharedFileIds.slice(0, 100)));
-        } else if (!fileSharesCollectionId) {
-          // Backward compatibility while shared data migrates to file_shares.
-          visibilityQueries.push(Query.contains("users", [principal.email]));
-        }
+    if (types.length > 0) {
+      queries.push(Query.equal("type", types));
+    }
 
-        const queries = [Query.or(visibilityQueries), Query.limit(limit)];
+    if (searchText) {
+      queries.push(Query.contains("name", searchText));
+    }
 
-        if (types.length > 0) {
-          queries.push(Query.equal("type", types));
-        }
+    if (cursor) {
+      queries.push(Query.cursorAfter(cursor));
+    }
 
-        if (searchText) {
-          queries.push(Query.contains("name", searchText));
-        }
+    const { sortBy, orderBy } = parseSort(sort);
 
-        if (cursor) {
-          queries.push(Query.cursorAfter(cursor));
-        }
+    queries.push(
+      orderBy === "asc" ? Query.orderAsc(sortBy) : Query.orderDesc(sortBy),
+    );
 
-        const { sortBy, orderBy } = parseSort(sort);
+    const result = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.filesCollectionId,
+      queries,
+    );
 
-        queries.push(
-          orderBy === "asc" ? Query.orderAsc(sortBy) : Query.orderDesc(sortBy),
-        );
+    const nextCursor =
+      result.documents.length === resolvedLimit
+        ? result.documents[result.documents.length - 1]?.$id
+        : null;
 
-        const result = await databases.listDocuments(
-          appwriteConfig.databaseId,
-          appwriteConfig.filesCollectionId,
-          queries,
-        );
-
-        const nextCursor =
-          result.documents.length === limit
-            ? result.documents[result.documents.length - 1]?.$id
-            : null;
-
-        return {
-          ...result,
-          nextCursor,
-        };
-      },
-      cacheKey,
-      {
-        tags: ["files", `user:${principal.clerkUserId}`],
-      },
-    )();
+    return {
+      ...result,
+      nextCursor,
+    };
   },
 
   getById: async (fileId: string) => {
-    return unstable_cache(
-      async () => {
-        const { databases } = await createAdminClient();
-        return databases.getDocument(
-          appwriteConfig.databaseId,
-          appwriteConfig.filesCollectionId,
-          fileId,
-        );
-      },
-      ["file", fileId],
-      { tags: [`file:${fileId}`] },
-    )();
+    const { databases } = await createAdminClient();
+    return databases.getDocument(
+      appwriteConfig.databaseId,
+      appwriteConfig.filesCollectionId,
+      fileId,
+    );
   },
 
   createMetadata: async ({
@@ -190,11 +210,46 @@ export const fileRepository = {
 
   listOwnedFiles: async (clerkUserId: string) => {
     const { databases } = await createAdminClient();
-    return databases.listDocuments(
-      appwriteConfig.databaseId,
-      appwriteConfig.filesCollectionId,
-      [Query.equal("clerkUserId", [clerkUserId]), Query.limit(200)],
-    );
+
+    const allDocuments: Record<string, unknown>[] = [];
+    let cursor: string | undefined;
+
+    while (true) {
+      const queries = [
+        Query.equal("clerkUserId", [clerkUserId]),
+        Query.limit(MAX_LIST_LIMIT),
+      ];
+
+      if (cursor) {
+        queries.push(Query.cursorAfter(cursor));
+      }
+
+      const page = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.filesCollectionId,
+        queries,
+      );
+
+      allDocuments.push(...page.documents);
+
+      if (page.documents.length < MAX_LIST_LIMIT) {
+        return {
+          ...page,
+          documents: allDocuments,
+          total: allDocuments.length,
+        };
+      }
+
+      cursor = page.documents[page.documents.length - 1]?.$id;
+
+      if (!cursor) {
+        return {
+          ...page,
+          documents: allDocuments,
+          total: allDocuments.length,
+        };
+      }
+    }
   },
 
   canAccessFile: async (fileId: string, principal: Principal) => {
@@ -232,7 +287,12 @@ export const fileRepository = {
       );
 
       return share.total > 0;
-    } catch {
+    } catch (error) {
+      logger.error("Failed to verify file share access", {
+        route: "file.repository.canAccessFile",
+        userId: principal.clerkUserId,
+        fileId,
+      }, error);
       return false;
     }
   },
@@ -261,8 +321,13 @@ export const fileRepository = {
         $id: document.$id,
         principal: document.principal,
       }));
-    } catch {
-      return;
+    } catch (error) {
+      logger.error("Failed to list existing file share records", {
+        route: "file.repository.upsertFileShares",
+        ownerId,
+        fileId,
+      }, error);
+      throw error;
     }
 
     const desired = new Set(principals.filter(Boolean));

@@ -14,10 +14,20 @@ export const dynamic = "force-dynamic";
 
 const Dashboard = async () => {
   // Parallel requests
-  const [files, totalSpace] = await Promise.all([
+  const [files, totalSpaceResult] = await Promise.all([
     getFiles({ types: [], limit: 10 }),
     getTotalSpaceUsed(),
   ]);
+
+  const totalSpace = totalSpaceResult || {
+    image: { size: 0, latestDate: "" },
+    document: { size: 0, latestDate: "" },
+    video: { size: 0, latestDate: "" },
+    audio: { size: 0, latestDate: "" },
+    other: { size: 0, latestDate: "" },
+    used: 0,
+    all: 2 * 1024 * 1024 * 1024,
+  };
 
   // Get usage summary
   const usageSummary = getUsageSummary(totalSpace);

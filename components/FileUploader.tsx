@@ -86,8 +86,8 @@ const FileUploader = ({ className }: Props) => {
       } finally {
         try {
           await account.deleteSession("current");
-        } catch {
-          // Session cleanup is best-effort to avoid failed uploads due to logout race conditions.
+        } catch (cleanupError) {
+          console.warn("Upload session cleanup failed", cleanupError);
         }
       }
     },

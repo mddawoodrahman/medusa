@@ -6,11 +6,45 @@ import { createAdminClient } from "@/lib/appwrite";
 import { getCurrentUser } from "@/lib/actions/user.actions";
 import { fileRepository } from "@/lib/repositories/file.repository";
 import { createRequestId, logger } from "@/lib/observability/logger";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 const toContentDispositionFilename = (fileName: string) =>
   fileName.replace(/[\r\n"]/g, "");
+
+const DEFAULT_THUMBNAIL_DIMENSION = 160;
+const MIN_THUMBNAIL_DIMENSION = 16;
+const MAX_THUMBNAIL_DIMENSION = 2000;
+
+const getClientIp = (request: NextRequest) => {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || "unknown";
+  }
+
+  return request.headers.get("x-real-ip") || "unknown";
+};
+
+const sanitizeThumbnailDimension = (value: string | null) => {
+  if (!value) {
+    return DEFAULT_THUMBNAIL_DIMENSION;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_THUMBNAIL_DIMENSION;
+  }
+
+  const rounded = Math.round(parsed);
+
+  return Math.min(
+    MAX_THUMBNAIL_DIMENSION,
+    Math.max(MIN_THUMBNAIL_DIMENSION, rounded),
+  );
+};
 
 export async function GET(
   request: NextRequest,
@@ -24,8 +58,12 @@ export async function GET(
     : requestedMode === "thumbnail"
       ? "thumbnail"
       : "view";
-  const thumbnailWidth = Number(request.nextUrl.searchParams.get("w") || 160);
-  const thumbnailHeight = Number(request.nextUrl.searchParams.get("h") || 160);
+  const thumbnailWidth = sanitizeThumbnailDimension(
+    request.nextUrl.searchParams.get("w"),
+  );
+  const thumbnailHeight = sanitizeThumbnailDimension(
+    request.nextUrl.searchParams.get("h"),
+  );
 
   const context = {
     requestId,
@@ -48,6 +86,40 @@ export async function GET(
         userId,
       });
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const clientIp = getClientIp(request);
+    const rateLimitKey = `${currentUser.clerkUserId}:${clientIp}`;
+    const rateLimitResult = checkRateLimit({
+      scope: "download",
+      key: rateLimitKey,
+      maxRequests: 120,
+      windowMs: 60_000,
+    });
+
+    if (!rateLimitResult.success) {
+      logger.warn("Download blocked: rate limit exceeded", {
+        ...context,
+        userId: currentUser.clerkUserId,
+        clientIp,
+      });
+
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((rateLimitResult.resetMs - Date.now()) / 1000),
+      );
+
+      return NextResponse.json(
+        { error: "Too many requests" },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfterSeconds),
+            "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+            "X-RateLimit-Reset": String(rateLimitResult.resetMs),
+          },
+        },
+      );
     }
 
     const canAccess = await fileRepository.canAccessFile(id, {
@@ -82,11 +154,21 @@ export async function GET(
     if (mode === "download") {
       content = await storage.getFileDownload(appwriteConfig.bucketId, bucketFileId);
     } else if (mode === "thumbnail") {
+      if (!String(storageFile.mimeType || "").startsWith("image/")) {
+        logger.warn("Thumbnail blocked: non-image file", {
+          ...context,
+          userId: currentUser.clerkUserId,
+          fileId: id,
+          mimeType: storageFile.mimeType,
+        });
+        return NextResponse.json({ error: "Thumbnail not available" }, { status: 400 });
+      }
+
       content = await storage.getFilePreview(
         appwriteConfig.bucketId,
         bucketFileId,
-        Number.isFinite(thumbnailWidth) ? thumbnailWidth : 160,
-        Number.isFinite(thumbnailHeight) ? thumbnailHeight : 160,
+        thumbnailWidth,
+        thumbnailHeight,
       );
     } else {
       content = await storage.getFileView(appwriteConfig.bucketId, bucketFileId);
@@ -100,6 +182,8 @@ export async function GET(
           ? "private, no-store"
           : "private, max-age=300, stale-while-revalidate=86400",
       "X-Request-Id": requestId,
+      "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+      "X-RateLimit-Reset": String(rateLimitResult.resetMs),
     });
 
     if (mode === "download") {

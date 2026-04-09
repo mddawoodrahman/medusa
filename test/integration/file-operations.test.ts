@@ -114,4 +114,25 @@ describe("file operations integration", () => {
     expect(permissions.some((permission) => permission.includes("read(\"user:"))).toBe(true);
     expect(upsertFileSharesMock).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects invalid share email addresses", async () => {
+    getByIdMock.mockResolvedValue({
+      $id: "file_1",
+      clerkUserId: "clerk_owner",
+      bucketField: "bucket_file_1",
+      users: [],
+    });
+
+    const { updateFileUsers } = require("../../lib/actions/file.actions");
+
+    await expect(
+      updateFileUsers({
+        fileId: "file_1",
+        emails: ["not-an-email"],
+        path: "/documents",
+      }),
+    ).rejects.toThrow("Invalid email list");
+
+    expect(updateFileMock).not.toHaveBeenCalled();
+  });
 });
