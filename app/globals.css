@@ -482,4 +482,11 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  .cl-footer,
+  .cl-footerAction,
+  .cl-footerAction__signIn,
+  .cl-footerAction__signUp {
+    background: transparent !important;
+  }
 }

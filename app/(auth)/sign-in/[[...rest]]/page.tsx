@@ -1,45 +1,40 @@
 import { SignIn } from "@clerk/nextjs";
+import Link from "next/link";
+import { clerkAuthAppearance } from "../../clerk-appearance";
 
 const SignInPage = () => (
-  <div className="w-full rounded-[28px] border border-light-200/60 bg-white p-5 shadow-drop-3 dark:border-light-300/20 dark:bg-dark-200 sm:p-8">
-    <div className="mb-6 space-y-2">
-      <p className="caption uppercase tracking-[0.2em] text-light-200">Welcome back</p>
-      <h1 className="h3 text-light-100 dark:text-light-100">Sign in to Medusa</h1>
-      <p className="body-2 text-light-100/80 dark:text-light-200">
-        Continue to your secure workspace and manage your files.
+  <div className="space-y-8">
+    <div className="space-y-3 text-center">
+      <p className="caption uppercase tracking-[0.22em] text-light-200">
+        Welcome back
+      </p>
+      <h1 className="text-3xl font-semibold tracking-[-0.03em] text-slate-900 dark:text-white sm:text-4xl">
+        Sign in to Medusa
+      </h1>
+      <p className="mx-auto max-w-md text-sm leading-6 text-slate-600 dark:text-light-200 sm:text-base">
+        Continue managing your files, teams, and secure workspace with one fast login.
       </p>
     </div>
 
-    <SignIn
-      path="/sign-in"
-      routing="path"
-      signUpUrl="/sign-up"
-      forceRedirectUrl="/"
-      appearance={{
-        elements: {
-          rootBox: "w-full",
-          card: "w-full border-none shadow-none bg-transparent p-0",
-          headerTitle: "hidden",
-          headerSubtitle: "hidden",
-          socialButtonsBlockButton:
-            "h-11 rounded-xl border border-light-200/70 bg-white text-light-100 hover:bg-light-300/50 dark:border-light-300/30 dark:bg-dark-100 dark:text-light-100",
-          socialButtonsBlockButtonText: "subtitle-2",
-          dividerLine: "bg-light-200/70 dark:bg-light-300/20",
-          dividerText: "caption text-light-200",
-          formFieldLabel: "body-2 mb-2 text-light-100 dark:text-light-200",
-          formFieldInput:
-            "h-11 rounded-xl border border-light-200/70 bg-white text-light-100 shadow-none focus:border-brand focus:ring-2 focus:ring-brand/15 dark:border-light-300/30 dark:bg-dark-100 dark:text-light-100",
-          formButtonPrimary:
-            "mt-2 h-11 rounded-xl bg-brand text-white transition-colors hover:bg-brand-100",
-          footerActionText: "body-2 text-light-200",
-          footerActionLink: "body-2 font-semibold text-brand hover:text-brand-100",
-          formFieldInputShowPasswordButton:
-            "text-light-200 hover:text-light-100 dark:hover:text-light-100",
-          identityPreviewText: "body-2 text-light-100 dark:text-light-100",
-          identityPreviewEditButton: "body-2 font-semibold text-brand hover:text-brand-100",
-        },
-      }}
-    />
+    <div className="rounded-[28px] border border-slate-200/80 bg-white/70 p-4 shadow-sm dark:border-white/10 dark:bg-dark-100/60 sm:p-5">
+      <SignIn
+        path="/sign-in"
+        routing="path"
+        signUpUrl="/sign-up"
+        forceRedirectUrl="/"
+        appearance={clerkAuthAppearance}
+      />
+    </div>
+
+    <p className="caption text-center text-light-200">
+      New to Medusa?{" "}
+      <Link
+        href="/sign-up"
+        className="font-semibold text-brand transition-colors hover:text-brand-100"
+      >
+        Create your account
+      </Link>
+    </p>
   </div>
 );
 
