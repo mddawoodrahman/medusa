@@ -1,152 +1,199 @@
 # Medusa
 
-Medusa is a Next.js 15 file management app that uses Clerk for authentication and Appwrite for database and storage.
+Medusa is a Next.js 15 file management application built around Clerk authentication and Appwrite storage. Authenticated users can upload files directly to Appwrite with short-lived scoped sessions, browse their library by type, search and sort files, share access with other users, and open downloads through protected application routes instead of public bucket URLs.
 
-## Table of contents
+## Live
 
-- [What This App Does](#what-this-app-does)
-- [Current Architecture](#current-architecture)
-- [Tech Stack](#tech-stack)
-- [Route Map](#route-map)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Environment Variables](#environment-variables)
-- [Appwrite Schema](#appwrite-schema)
-- [Auth And Data Flow](#auth-and-data-flow)
-- [Scripts](#scripts)
-- [Recent Migration Notes](#recent-migration-notes)
-- [Troubleshooting](#troubleshooting)
+https://welovemedusa.vercel.app/
 
-## What This App Does
+## Overview
 
-- Authenticates users with Clerk (sign in/sign up/sign out)
-- Uploads files to Appwrite Storage
-- Persists file metadata in Appwrite Database
-- Supports rename, delete, and shared-user list updates
-- Provides dashboard stats, type filtering, sorting, and search
+- Clerk handles sign-up, sign-in, session state, and route protection.
+- Appwrite stores user records, file metadata, sharing records, and file binaries.
+- Next.js Server Actions implement the authenticated file operations.
+- Secure API routes proxy view, download, and thumbnail access after authorization checks.
+- The UI includes a dashboard, recent uploads, type-based library pages, drag-and-drop upload, dark mode, and file actions for rename, share, details, download, and delete.
 
-## Current Architecture
+## Core Features
 
-- Frontend: Next.js App Router + React 19 + Tailwind + shadcn/ui
-- Auth: Clerk (`@clerk/nextjs`)
-- Data/storage: Appwrite (`node-appwrite` server SDK)
-- Server logic: Next.js Server Actions in `lib/actions`
-
-Important implementation details based on current code:
-
-- All non-auth routes are protected by Clerk middleware.
-- Auth pages use optional catch-all routes:
-   - `/sign-in/[[...rest]]`
-   - `/sign-up/[[...rest]]`
-- Root layout wraps app with `ClerkProvider`.
-- On first authenticated request, the app creates a user document in Appwrite if it does not exist.
-- File ownership is keyed by `clerkUserId`.
+- Clerk-protected App Router application with path-based auth routes
+- Automatic Appwrite user provisioning on first authenticated request
+- Direct browser-to-Appwrite uploads using short-lived Appwrite user tokens
+- File categorization into documents, images, video, audio, and other
+- Dashboard storage summary with recent file activity
+- Search, sort, and cursor-based pagination for file browsing
+- File sharing by email, backed by storage permissions plus share records
+- Protected file view, download, and thumbnail endpoints
+- Structured JSON logging with request IDs
+- Light and dark theme toggle persisted in local storage
 
 ## Tech Stack
 
-| Technology | Version | Purpose |
-| --- | --- | --- |
-| Next.js | 15.5.14 | App framework (App Router) |
-| React | 19.0.0-rc | UI rendering |
-| TypeScript | 5.x | Type safety |
-| Clerk | 7.0.8 | Authentication and identity |
-| node-appwrite | 14.2.0 | Appwrite server SDK |
-| appwrite | 17.0.2 | Appwrite client package |
-| Tailwind CSS | 3.4.1 | Styling |
-| Recharts | 2.13.3 | Dashboard charts |
+| Layer | Implementation |
+| --- | --- |
+| Framework | Next.js 15 App Router |
+| UI | React 19 RC, Tailwind CSS, shadcn/ui, Radix UI |
+| Auth | Clerk |
+| Storage and database | Appwrite |
+| Charts | Recharts |
+| Forms and validation | React Hook Form, Zod |
+| Testing | Jest with `ts-jest` |
+| Language and tooling | TypeScript, ESLint, Prettier |
+
+## Architecture
+
+### Request flow
+
+1. Clerk middleware protects every non-auth route.
+2. `getCurrentUser()` resolves the active Clerk user and creates a matching Appwrite `users` document if none exists.
+3. File actions in `lib/actions/file.actions.ts` call repository helpers in `lib/repositories`.
+4. Repositories use the Appwrite admin client from `lib/appwrite/index.ts`.
+5. Files are stored in Appwrite Storage, but all application file URLs point back to `/api/files/download/[id]`.
+
+### Upload flow
+
+1. The `FileUploader` component calls `POST /api/upload/initiate`.
+2. The route verifies the Clerk session, ensures an Appwrite auth user exists, and creates a short-lived Appwrite token.
+3. The browser creates an Appwrite session with that token and uploads the file directly to Storage.
+4. After the binary upload succeeds, `createFileMetadata()` stores the file document in Appwrite with a protected internal URL like `/api/files/download/:id?mode=view`.
+
+### Access and sharing flow
+
+1. Owned files are queried by `clerkUserId`.
+2. Shared visibility is resolved from `file_shares` when configured.
+3. If `NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION` is not configured, the app falls back to the legacy `users` email array on the `files` document.
+4. The secure download route checks ownership or share access before returning a view stream, download stream, or image thumbnail.
+5. Share updates modify both Appwrite Storage permissions and the metadata/share collections.
 
 ## Route Map
 
-- Public routes:
-   - `/sign-in/[[...rest]]`
-   - `/sign-up/[[...rest]]`
-- Protected routes:
-   - `/(root)` group, including dashboard and file type pages
+### Public routes
+
+- `/sign-in/[[...rest]]`
+- `/sign-up/[[...rest]]`
+
+### Protected routes
+
+- `/` - dashboard with storage breakdown and recent files
+- `/documents`
+- `/images`
+- `/media`
+- `/others`
+
+### Protected API routes
+
+- `POST /api/upload/initiate` - returns scoped Appwrite upload credentials
+- `GET /api/files/download/[id]?mode=view|download|thumbnail` - authorized file delivery
 
 ## Project Structure
 
 ```text
-medusa-main/
-   app/
-      (auth)/
-         sign-in/[[...rest]]/page.tsx
-         sign-up/[[...rest]]/page.tsx
-      (root)/
-         layout.tsx
-         page.tsx
-         [type]/page.tsx
-      layout.tsx
-   components/
-   constants/
-   hooks/
-   lib/
-      actions/
-         file.actions.ts
-         user.actions.ts
-      appwrite/
-   scripts/
-      setup-appwrite.js
-   types/
+app/
+  (auth)/
+    sign-in/[[...rest]]/page.tsx
+    sign-up/[[...rest]]/page.tsx
+  (root)/
+    layout.tsx
+    page.tsx
+    [type]/page.tsx
+  api/
+    upload/initiate/route.ts
+    files/download/[id]/route.ts
+components/
+  FileUploader.tsx
+  Search.tsx
+  ActionDropdown.tsx
+  Sidebar.tsx
+  MobileNavigation.tsx
+lib/
+  actions/
+  appwrite/
+  observability/
+  repositories/
+scripts/
+  setup-appwrite.js
+test/
+  middleware.test.ts
+  integration/
+  e2e/
 ```
 
-## Getting Started
+## Appwrite Data Model
 
-### 1. Clone
+### `users` collection
 
-```bash
-git clone https://github.com/your-username/medusa.git
-cd medusa
-```
+| Field | Type | Notes |
+| --- | --- | --- |
+| `fullName` | string | Display name from Clerk profile |
+| `email` | email | Used for lookup and sharing |
+| `avatar` | url | Clerk image or placeholder |
+| `clerkUserId` | string | Primary identity key for the app |
 
-### 2. Install dependencies
+### `files` collection
 
-Preferred:
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string | Stored file name |
+| `type` | string | `document`, `image`, `video`, `audio`, or `other` |
+| `extension` | string | Lowercased file extension |
+| `url` | url | Internal app URL, not a public Appwrite URL |
+| `size` | integer | Original size in bytes |
+| `clerkUserId` | string | Owner identity |
+| `ownerName` | string | Snapshot of owner name |
+| `bucketField` | string | Appwrite Storage file ID |
+| `users` | string[] | Legacy shared-email fallback |
+
+### `file_shares` collection
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `fileId` | string | Related `files` document ID |
+| `principal` | string | Shared Clerk user ID or email |
+| `role` | string | Currently `viewer` |
+| `status` | string | Currently `active` |
+| `ownerId` | string | Owning Clerk user ID |
+| `type` | string | Currently `direct` |
+
+### Storage bucket
+
+- File security is expected to stay enabled.
+- The application currently enforces a 50 MB client-side upload limit by default.
+- The dashboard storage ring is a UI quota based on a fixed 2 GB cap in `getTotalSpaceUsed()`.
+
+## Important Implementation Notes
+
+- Files are private by default. The code never grants public read permissions.
+- Thumbnails for protected images are served through `mode=thumbnail`, which uses Appwrite previews under the same authorization gate.
+- The app creates a deterministic Appwrite auth-user ID from the Clerk user ID so upload permissions can be scoped to actual Appwrite users.
+- The setup script creates collections and a bucket, but it expects an existing Appwrite database ID in `.env.local`.
+- The current setup script bucket allowlist is narrow: `jpg`, `png`, `pdf`, `docx`, and `mp4`. Expand it if you want the broader set of file types recognized by the UI.
+
+## Local Development
+
+### Prerequisites
+
+- Node.js 20+
+- npm
+- A Clerk application
+- An Appwrite project
+- An Appwrite database created ahead of time
+- An Appwrite API key with database, users, and storage access
+
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-Alternative:
+### 2. Create local environment configuration
 
-```bash
-npm ci
-```
-
-### 3. Configure environment
-
-Copy `.env.example` to `.env.local` and fill in values.
-
-### 4. Set up Appwrite resources
-
-```bash
-node scripts/setup-appwrite.js
-```
-
-### 5. Run development server
-
-Preferred:
-
-```bash
-npm run dev
-```
-
-Alternative:
-
-```bash
-npm run build && npm run start
-```
-
-Open `http://localhost:3000`.
-
-## Environment Variables
-
-Create `.env.local` in project root.
+Start from `.env.example`, then add the full set of variables below to `.env.local`:
 
 ```env
 # Appwrite
 NEXT_PUBLIC_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 NEXT_PUBLIC_APPWRITE_PROJECT=your_project_id
-NEXT_PUBLIC_APPWRITE_PROJECT_ID=your_project_id
+# or NEXT_PUBLIC_APPWRITE_PROJECT_ID=your_project_id
 NEXT_PUBLIC_APPWRITE_DATABASE=your_database_id
 NEXT_PUBLIC_APPWRITE_USERS_COLLECTION=your_users_collection_id
 NEXT_PUBLIC_APPWRITE_FILES_COLLECTION=your_files_collection_id
@@ -162,104 +209,87 @@ CLERK_SECRET_KEY=your_clerk_secret_key
 
 Notes:
 
-- `NEXT_PUBLIC_APPWRITE_PROJECT` is used in app config.
-- `scripts/setup-appwrite.js` accepts either `NEXT_PUBLIC_APPWRITE_PROJECT_ID` or `NEXT_PUBLIC_APPWRITE_PROJECT`.
-- If you define both, keep them identical.
+- `NEXT_PUBLIC_APPWRITE_PROJECT` and `NEXT_PUBLIC_APPWRITE_PROJECT_ID` are treated as aliases. Set one or keep both identical.
+- `NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION` is optional in code, but recommended.
+- `NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE` defaults to 50 MB if omitted.
 
-## Appwrite Schema
+### 3. Bootstrap Appwrite collections and bucket
 
-Users collection:
+```bash
+node scripts/setup-appwrite.js
+```
 
-| Attribute | Type | Required |
-| --- | --- | --- |
-| fullName | String | Yes |
-| email | Email | Yes |
-| avatar | URL | Yes |
-| clerkUserId | String | Yes |
+The script:
 
-Files collection:
+- loads `.env.local`
+- creates or reuses the `users`, `files`, and `file_shares` collections
+- creates the storage bucket
+- adds basic file and share indexes
 
-| Attribute | Type | Required |
-| --- | --- | --- |
-| name | String | Yes |
-| type | String | Yes |
-| extension | String | Yes |
-| url | URL | Yes |
-| size | Integer | Yes |
-| clerkUserId | String | Yes |
-| ownerName | String | Yes |
-| bucketField | String | Yes |
-| users | String[] | No |
+After the script runs, copy the generated collection IDs and bucket ID into `.env.local` if needed.
 
-Bucket:
+### 4. Start the app
 
-- Max size: 50MB
-- File security: enabled
+```bash
+npm run dev
+```
 
-## Auth And Data Flow
+Then open `http://localhost:3000`.
 
-1. User signs in with Clerk.
-2. Clerk middleware protects non-auth routes.
-3. `getCurrentUser` reads Clerk `userId` on the server.
-4. If Appwrite user doc does not exist, app creates it using Clerk profile info.
-5. Upload initiation is handled by `/api/upload/initiate`.
-6. Browser uploads file binary directly to Appwrite Storage.
-7. Server action stores metadata after successful upload.
-8. File list queries use owner access and `file_shares` principals.
+## NPM Scripts
 
-Security note:
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Next.js dev server with Turbopack |
+| `npm run typecheck` | Run `tsc --noEmit` |
+| `npm run lint` | Run ESLint |
+| `npm run test:unit` | Run unit-style Jest tests outside `test/integration` |
+| `npm run test:integration` | Run mocked integration tests |
+| `npm run test:e2e` | Run the Jest-based critical-journey test file |
+| `npm run test` | Run unit and integration suites |
+| `npm run build` | Build the production app |
+| `npm run start` | Start the production server |
+| `npm run ci:verify` | Fresh install plus typecheck, lint, test, and build |
+| `npm run test:ci` | Typecheck, lint, test, and build without reinstalling |
 
-- Files are private by default and never use public-read ACL.
-- Access is enforced by owner and explicit shares.
-- Download and view requests are served from `/api/files/download/:id` after authorization checks.
+## Verification Status
 
-## Scripts
+Verified in this workspace on April 9, 2026:
 
-| Script | Command | Purpose |
-| --- | --- | --- |
-| dev | `next dev --turbopack` | Start local dev server |
-| typecheck | `tsc --noEmit` | Validate strict TypeScript types |
-| lint | `eslint . --ext .ts,.tsx` | Run lint checks |
-| test | `npm run test:unit && npm run test:integration` | Run test suites |
-| build | `next build` | Build production bundle |
-| start | `next start` | Start production server |
-| ci:verify | `npm ci && npm run typecheck && npm run lint && npm run test && npm run build` | Run CI quality gates |
+- `npm run typecheck` passed
+- `npm run lint` passed
+- `npm run test` passed
 
-## Recent Migration Notes
+The current test suite focuses on middleware, auth provisioning, upload initiation, file operation permissions, and secure download authorization. The repo does not currently include a browser-driven E2E runner in `package.json`; the `test:e2e` target is a Jest test.
 
-Authentication was migrated from Appwrite auth to Clerk.
+## Known Constraints
 
-- Removed OTP/session/account flows from Appwrite auth
-- Added Clerk middleware and provider
-- Switched identity references from `accountId` to `clerkUserId`
-- Updated user and file schemas in Appwrite setup script
-- Updated protected routing and auth pages for Clerk path routing
-
-If you have existing pre-migration data, migrate legacy records before production use:
-
-- Users: map old `accountId` to `clerkUserId`
-- Files: map old owner/account fields to `clerkUserId` and `ownerName`
+- The storage usage chart is based on a fixed 2 GB cap, not a live Appwrite quota.
+- Search is implemented through a debounced client component that calls the server action directly and returns up to 8 results.
+- Shared access works best when every shared email belongs to a user that has already been provisioned into the Appwrite `users` collection.
+- If you rely on the bucket created by the setup script, review its allowed file extensions before production use.
 
 ## Troubleshooting
 
-### Clerk SignIn/SignUp runtime route error
+### Auth routes do not render correctly
 
-If Clerk says SignIn/SignUp is not configured correctly:
+- Confirm the public routes remain `/sign-in/[[...rest]]` and `/sign-up/[[...rest]]`.
+- Confirm `middleware.ts` keeps `/sign-in(.*)` and `/sign-up(.*)` public.
 
-- Ensure routes are catch-all:
-   - `/sign-in/[[...rest]]/page.tsx`
-   - `/sign-up/[[...rest]]/page.tsx`
-- Ensure middleware leaves `/sign-in(.*)` and `/sign-up(.*)` public.
+### Upload initiation returns unauthorized
 
-### Unauthorized errors on file actions
+- Confirm the user is signed in with Clerk.
+- Confirm `getCurrentUser()` can create or resolve the Appwrite `users` document.
+- Confirm your Appwrite API key and collection IDs are valid.
 
-- Confirm Clerk keys are valid.
-- Confirm Appwrite user document is created with `clerkUserId`.
-- Confirm collection IDs and API key in env are correct.
+### Downloads return 403
 
-### Appwrite setup script project ID errors
+- Confirm the file belongs to the current user or has an active share record.
+- Confirm the `file_shares` collection ID is set if you want indexed share lookups.
+- Confirm the Appwrite Storage permissions still include the intended users.
 
-If setup script fails with project ID errors, set at least one of:
+### Setup script fails immediately
 
-- `NEXT_PUBLIC_APPWRITE_PROJECT`
-- `NEXT_PUBLIC_APPWRITE_PROJECT_ID`
+- Confirm `.env.local` exists.
+- Confirm `NEXT_PUBLIC_APPWRITE_DATABASE` points to an existing database.
+- Confirm your Appwrite project ID and API key are valid.
