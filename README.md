@@ -205,6 +205,8 @@ NEXT_APPWRITE_KEY=your_appwrite_api_key
 # Clerk
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
 CLERK_SECRET_KEY=your_clerk_secret_key
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 ```
 
 Notes:
@@ -212,6 +214,7 @@ Notes:
 - `NEXT_PUBLIC_APPWRITE_PROJECT` and `NEXT_PUBLIC_APPWRITE_PROJECT_ID` are treated as aliases. Set one or keep both identical.
 - `NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION` is optional in code, but recommended.
 - `NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE` defaults to 50 MB if omitted.
+- `NEXT_PUBLIC_CLERK_SIGN_IN_URL` and `NEXT_PUBLIC_CLERK_SIGN_UP_URL` should point to your local auth routes so middleware redirects stay in-app.
 
 ### 3. Bootstrap Appwrite collections and bucket
 

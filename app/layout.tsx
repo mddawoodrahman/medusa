@@ -47,7 +47,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitializerScript }} />
       </head>
       <body className={`${poppins.variable} font-poppins antialiased`}>
-        <ClerkProvider>{children}</ClerkProvider>
+        <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">
+          {children}
+        </ClerkProvider>
       </body>
     </html>
   );

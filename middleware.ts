@@ -6,6 +6,7 @@ const isPublicRoute = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
 export default clerkMiddleware(async (auth, req) => {
   const requestId = req.headers.get("x-request-id") ?? createRequestId();
   const route = req.nextUrl.pathname;
+  const isApiRoute = route.startsWith("/api") || route.startsWith("/trpc");
 
   if (isPublicRoute(req)) {
     logger.info("Middleware allowed public route", {
@@ -20,7 +21,13 @@ export default clerkMiddleware(async (auth, req) => {
     route,
   });
 
-  await auth.protect();
+  await auth.protect(
+    isApiRoute
+      ? undefined
+      : {
+          unauthenticatedUrl: new URL("/sign-in", req.url).toString(),
+        },
+  );
 });
 
 export const config = {

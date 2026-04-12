@@ -29,28 +29,42 @@ describe("middleware", () => {
   it("protects private routes", async () => {
     const module = require("../middleware");
     const middleware = module.default as (
-      auth: { protect: () => Promise<void> },
-      req: { headers: { get: (key: string) => string | null }; nextUrl: { pathname: string } },
+      auth: { protect: (options?: { unauthenticatedUrl?: string }) => Promise<void> },
+      req: {
+        url: string;
+        headers: { get: (key: string) => string | null };
+        nextUrl: { pathname: string };
+      },
     ) => Promise<void>;
 
-    const protect = jest.fn<() => Promise<void>>(async () => undefined);
+    const protect = jest.fn<(options?: { unauthenticatedUrl?: string }) => Promise<void>>(
+      async () => undefined,
+    );
 
     await middleware(
       { protect },
       {
+        url: "http://localhost:3000/dashboard",
         headers: { get: () => null },
         nextUrl: { pathname: "/dashboard" },
       },
     );
 
     expect(protect).toHaveBeenCalledTimes(1);
+    expect(protect).toHaveBeenCalledWith({
+      unauthenticatedUrl: "http://localhost:3000/sign-in",
+    });
   });
 
   it("skips protect on sign-in and sign-up routes", async () => {
     const module = require("../middleware");
     const middleware = module.default as (
       auth: { protect: () => Promise<void> },
-      req: { headers: { get: (key: string) => string | null }; nextUrl: { pathname: string } },
+      req: {
+        url: string;
+        headers: { get: (key: string) => string | null };
+        nextUrl: { pathname: string };
+      },
     ) => Promise<void>;
 
     const protect = jest.fn<() => Promise<void>>(async () => undefined);
@@ -58,6 +72,7 @@ describe("middleware", () => {
     await middleware(
       { protect },
       {
+        url: "http://localhost:3000/sign-in",
         headers: { get: () => null },
         nextUrl: { pathname: "/sign-in" },
       },
@@ -65,6 +80,7 @@ describe("middleware", () => {
     await middleware(
       { protect },
       {
+        url: "http://localhost:3000/sign-up/sso-callback",
         headers: { get: () => null },
         nextUrl: { pathname: "/sign-up/sso-callback" },
       },
