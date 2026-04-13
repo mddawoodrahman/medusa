@@ -1,298 +1,443 @@
 # Medusa
 
-Medusa is a Next.js 15 file management application built around Clerk authentication and Appwrite storage. Authenticated users can upload files directly to Appwrite with short-lived scoped sessions, browse their library by type, search and sort files, share access with other users, and open downloads through protected application routes instead of public bucket URLs.
+Medusa is a secure, multi-user file workspace built with Next.js 15, Clerk, and Appwrite. It supports authenticated uploads with short-lived credentials, protected file delivery through server-side authorization, library browsing by type, and file sharing.
 
-## Live
+Live URL: https://welovemedusa.vercel.app/
 
-https://welovemedusa.vercel.app/
+## Table of Contents
 
-## Overview
+- Product Summary
+- Architecture Overview
+- Complete Application Analysis
+- Repository Structure
+- Data Model
+- Security Model
+- API Reference
+- Local Development
+- Environment Variables
+- Scripts and Quality Gates
+- CI and Delivery
+- Known Constraints
+- Improvement Roadmap
+- Troubleshooting
 
-- Clerk handles sign-up, sign-in, session state, and route protection.
-- Appwrite stores user records, file metadata, sharing records, and file binaries.
-- Next.js Server Actions implement the authenticated file operations.
-- Secure API routes proxy view, download, and thumbnail access after authorization checks.
-- The UI includes a dashboard, recent uploads, type-based library pages, drag-and-drop upload, dark mode, and file actions for rename, share, details, download, and delete.
+## Product Summary
 
-## Core Features
+### Core Capabilities
 
-- Clerk-protected App Router application with path-based auth routes
-- Automatic Appwrite user provisioning on first authenticated request
-- Direct browser-to-Appwrite uploads using short-lived Appwrite user tokens
-- File categorization into documents, images, video, audio, and other
-- Dashboard storage summary with recent file activity
-- Search, sort, and cursor-based pagination for file browsing
-- File sharing by email, backed by storage permissions plus share records
-- Protected file view, download, and thumbnail endpoints
-- Structured JSON logging with request IDs
-- Light and dark theme toggle persisted in local storage
+- Clerk-authenticated app routes and API access.
+- Direct browser-to-Appwrite uploads via short-lived scoped token sessions.
+- Secure file access proxy route for view, download, and thumbnails.
+- File categorization into documents, images, audio, video, and other.
+- Search, sort, and cursor pagination for file listing pages.
+- File sharing by email with metadata plus Appwrite Storage permission updates.
+- Dashboard summary cards and recent-file activity.
+- Structured server logging with request IDs.
 
-## Tech Stack
+### Tech Stack
 
 | Layer | Implementation |
 | --- | --- |
 | Framework | Next.js 15 App Router |
-| UI | React 19 RC, Tailwind CSS, shadcn/ui, Radix UI |
+| Runtime UI | React 19 RC |
 | Auth | Clerk |
-| Storage and database | Appwrite |
-| Charts | Recharts |
-| Forms and validation | React Hook Form, Zod |
-| Testing | Jest with `ts-jest` |
-| Language and tooling | TypeScript, ESLint, Prettier |
+| Data + Storage | Appwrite (database + storage + users) |
+| UI System | Tailwind CSS, shadcn/ui, Radix UI |
+| Validation | Zod |
+| Testing | Jest + ts-jest |
+| Lint/Format | ESLint + Prettier |
+| CI | GitHub Actions |
 
-## Architecture
+## Architecture Overview
 
-### Request flow
+### High-Level Flow
 
-1. Clerk middleware protects every non-auth route.
-2. `getCurrentUser()` resolves the active Clerk user and creates a matching Appwrite `users` document if none exists.
-3. File actions in `lib/actions/file.actions.ts` call repository helpers in `lib/repositories`.
-4. Repositories use the Appwrite admin client from `lib/appwrite/index.ts`.
-5. Files are stored in Appwrite Storage, but all application file URLs point back to `/api/files/download/[id]`.
+1. Middleware protects all non-auth routes.
+2. Authenticated requests resolve the current Clerk user and ensure a matching Appwrite user profile exists.
+3. Server Actions handle file domain logic and call repositories.
+4. Repositories interact with Appwrite via an admin client.
+5. All file URLs resolve to protected app routes instead of public storage URLs.
 
-### Upload flow
+### Upload Flow
 
-1. The `FileUploader` component calls `POST /api/upload/initiate`.
-2. The route verifies the Clerk session, ensures an Appwrite auth user exists, and creates a short-lived Appwrite token.
-3. The browser creates an Appwrite session with that token and uploads the file directly to Storage.
-4. After the binary upload succeeds, `createFileMetadata()` stores the file document in Appwrite with a protected internal URL like `/api/files/download/:id?mode=view`.
+1. Client calls POST /api/upload/initiate with file metadata.
+2. API route verifies auth, applies rate limit, validates payload, and issues short-lived Appwrite token.
+3. Browser creates an Appwrite session using token and uploads directly to storage.
+4. Server Action persists metadata document after upload completes.
 
-### Access and sharing flow
+### Download and Thumbnail Flow
 
-1. Owned files are queried by `clerkUserId`.
-2. Shared visibility is resolved from `file_shares` when configured.
-3. If `NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION` is not configured, the app falls back to the legacy `users` email array on the `files` document.
-4. The secure download route checks ownership or share access before returning a view stream, download stream, or image thumbnail.
-5. Share updates modify both Appwrite Storage permissions and the metadata/share collections.
+1. Client requests GET /api/files/download/[id]?mode=view|download|thumbnail.
+2. Route validates auth, applies rate limit, and checks ownership/share access.
+3. Route streams file view/download/preview with private cache headers.
 
-## Route Map
+## Complete Application Analysis
 
-### Public routes
+Analysis date: April 13, 2026
 
-- `/sign-in/[[...rest]]`
-- `/sign-up/[[...rest]]`
+### 1) Architecture and Modularity
 
-### Protected routes
+Current state:
+- Good separation exists between actions and repositories.
+- Route-level concerns are mostly clean and security-aware.
 
-- `/` - dashboard with storage breakdown and recent files
-- `/documents`
-- `/images`
-- `/media`
-- `/others`
+Strengths:
+- Clear layering: UI -> Actions -> Repositories -> Appwrite.
+- Reusable security checks for owner validation and file access.
 
-### Protected API routes
+Gaps:
+- Some business rules are split across route handlers, actions, and repositories, which increases coupling.
+- Multiple places resolve auth + user hydration independently.
 
-- `POST /api/upload/initiate` - returns scoped Appwrite upload credentials
-- `GET /api/files/download/[id]?mode=view|download|thumbnail` - authorized file delivery
+### 2) Code Quality and Maintainability
 
-## Project Structure
+Current state:
+- TypeScript is used consistently.
+- Error logging is structured and centralized.
+
+Strengths:
+- Validation with Zod in upload initiation.
+- Reasonably consistent naming and conventions.
+
+Gaps:
+- Some UI flows rely on truthy return values from server actions instead of explicit result contracts.
+- Serialization helper pattern uses JSON parse/stringify frequently, which can hide type boundaries.
+
+### 3) Performance and Scalability
+
+Current state:
+- Core pages are force-dynamic.
+- Dashboard total usage scans all user files at request time.
+
+Strengths:
+- Pagination exists for listing pages.
+- Recent uploads fetched in parallel with storage summary.
+
+Gaps:
+- Shared-access query path can become expensive at higher collaboration volume.
+- Dynamic rendering everywhere limits caching leverage.
+
+### 4) Reliability and Resilience
+
+Current state:
+- Good local rollback attempts on multi-step rename/share operations.
+- Rate limiting is implemented for upload and download routes.
+
+Strengths:
+- Defensive checks for unauthorized, forbidden, invalid payload, and oversize upload cases.
+- Thumbnail input sanitization prevents unreasonable dimensions.
+
+Gaps:
+- Rate limiting store is in-memory and not distributed.
+- No explicit idempotency keys for mutation workflows.
+
+### 5) Security and Privacy
+
+Current state:
+- Private-by-default file access model is correctly enforced.
+- No public read permission grants.
+
+Strengths:
+- Clerk route protection + server-side authorization checks before file delivery.
+- Download filename sanitization and controlled content disposition.
+
+Gaps:
+- IP extraction uses forwarding headers directly; trust model depends on deployment proxy setup.
+- Appwrite admin key is central to all repository calls, so key governance is critical.
+
+### 6) Data Layer
+
+Current state:
+- Users, files, and file_shares collections are used with basic indexes.
+- Legacy fallback to users[] email array exists when file_shares is missing.
+
+Strengths:
+- Data model supports owner + shared principals.
+- Share updates synchronize both metadata and storage permissions.
+
+Gaps:
+- Share lookup and reconciliation can become heavy at scale.
+- Setup script is functional but migration handling is not versioned.
+
+### 7) Testing Strategy
+
+Current state:
+- Middleware and integration-style route/action tests exist.
+- Coverage focuses on auth, upload, permission, and download behavior.
+
+Strengths:
+- Critical authorization logic is tested.
+- CI runs typecheck, lint, tests, and build.
+
+Gaps:
+- Most integration tests use mocked dependencies.
+- test:e2e currently uses Jest route tests, not browser-driven E2E.
+
+### 8) DevOps and Delivery
+
+Current state:
+- Single GitHub Actions workflow for main/dev pushes and PRs.
+
+Strengths:
+- CI gate includes typecheck + lint + test + build.
+- Uses maintained versions of checkout and setup-node actions.
+
+Gaps:
+- No dedicated deployment-stage smoke tests.
+- No explicit observability pipeline beyond console JSON logs.
+
+### 9) Dependencies and Upgrades
+
+Current state:
+- Next.js and linting stack are updated and aligned.
+- React is pinned to RC builds.
+
+Strengths:
+- Security override present for brace-expansion transitive dependency.
+
+Gaps:
+- React RC runtime with React 18 type packages introduces long-term upgrade risk.
+
+### 10) Product-Level Technical Improvements
+
+High-impact opportunities:
+- Add precomputed per-user storage aggregates to reduce dashboard scan cost.
+- Replace in-memory rate limiter with distributed backing for horizontal scale.
+- Introduce browser E2E for upload/share/download journeys.
+- Introduce explicit action result contracts for cleaner UI state handling.
+
+## Repository Structure
 
 ```text
 app/
   (auth)/
-    sign-in/[[...rest]]/page.tsx
-    sign-up/[[...rest]]/page.tsx
   (root)/
-    layout.tsx
-    page.tsx
-    [type]/page.tsx
   api/
-    upload/initiate/route.ts
-    files/download/[id]/route.ts
 components/
-  FileUploader.tsx
-  Search.tsx
-  ActionDropdown.tsx
-  Sidebar.tsx
-  MobileNavigation.tsx
+constants/
+hooks/
 lib/
   actions/
   appwrite/
   observability/
   repositories/
+  security/
 scripts/
-  setup-appwrite.js
 test/
-  middleware.test.ts
-  integration/
-  e2e/
+types/
 ```
 
-## Appwrite Data Model
+## Data Model
 
-### `users` collection
+### users collection
 
-| Field | Type | Notes |
+| Field | Type | Purpose |
 | --- | --- | --- |
-| `fullName` | string | Display name from Clerk profile |
-| `email` | email | Used for lookup and sharing |
-| `avatar` | url | Clerk image or placeholder |
-| `clerkUserId` | string | Primary identity key for the app |
+| fullName | string | Display name |
+| email | email | Share lookup and identity |
+| avatar | url | Profile image |
+| clerkUserId | string | Primary app identity key |
 
-### `files` collection
+### files collection
 
-| Field | Type | Notes |
+| Field | Type | Purpose |
 | --- | --- | --- |
-| `name` | string | Stored file name |
-| `type` | string | `document`, `image`, `video`, `audio`, or `other` |
-| `extension` | string | Lowercased file extension |
-| `url` | url | Internal app URL, not a public Appwrite URL |
-| `size` | integer | Original size in bytes |
-| `clerkUserId` | string | Owner identity |
-| `ownerName` | string | Snapshot of owner name |
-| `bucketField` | string | Appwrite Storage file ID |
-| `users` | string[] | Legacy shared-email fallback |
+| name | string | File name |
+| type | string | document, image, video, audio, other |
+| extension | string | Lowercase extension |
+| url | url | Protected app URL |
+| size | integer | File size in bytes |
+| clerkUserId | string | Owner ID |
+| ownerName | string | Owner snapshot |
+| bucketField | string | Appwrite Storage file ID |
+| users | string[] | Legacy share fallback |
 
-### `file_shares` collection
+### file_shares collection
 
-| Field | Type | Notes |
+| Field | Type | Purpose |
 | --- | --- | --- |
-| `fileId` | string | Related `files` document ID |
-| `principal` | string | Shared Clerk user ID or email |
-| `role` | string | Currently `viewer` |
-| `status` | string | Currently `active` |
-| `ownerId` | string | Owning Clerk user ID |
-| `type` | string | Currently `direct` |
+| fileId | string | File document ID |
+| principal | string | Shared clerkUserId or email |
+| role | string | Share role (viewer) |
+| status | string | active/inactive state |
+| ownerId | string | Owner clerkUserId |
+| type | string | Share strategy metadata |
 
-### Storage bucket
+## Security Model
 
-- File security is expected to stay enabled.
-- The application currently enforces a 50 MB client-side upload limit by default.
-- The dashboard storage ring is a UI quota based on a fixed 2 GB cap in `getTotalSpaceUsed()`.
+- Protected routes enforced by Clerk middleware.
+- Upload initiation requires authenticated user and validated payload.
+- File delivery checks ownership/share authorization before streaming content.
+- Appwrite Storage permissions are set per owner and shared users.
+- No public storage permissions are granted by default.
 
-## Important Implementation Notes
+## API Reference
 
-- Files are private by default. The code never grants public read permissions.
-- Thumbnails for protected images are served through `mode=thumbnail`, which uses Appwrite previews under the same authorization gate.
-- The app creates a deterministic Appwrite auth-user ID from the Clerk user ID so upload permissions can be scoped to actual Appwrite users.
-- The setup script creates collections and a bucket, but it expects an existing Appwrite database ID in `.env.local`.
-- The current setup script bucket allowlist is narrow: `jpg`, `png`, `pdf`, `docx`, and `mp4`. Expand it if you want the broader set of file types recognized by the UI.
+### POST /api/upload/initiate
+
+Purpose:
+- Return short-lived Appwrite credentials and upload metadata.
+
+Behavior:
+- 401 if unauthenticated.
+- 400 for invalid payload.
+- 413 for oversized uploads.
+- 429 when rate limit exceeded.
+
+### GET /api/files/download/[id]
+
+Query:
+- mode=view|download|thumbnail
+- w and h for thumbnail size (sanitized to safe bounds)
+
+Behavior:
+- 401 if unauthenticated.
+- 403 if access denied.
+- 400 for invalid thumbnail mode on non-image file.
+- Streams file with private cache strategy.
 
 ## Local Development
 
 ### Prerequisites
 
+- Bun 1.1+ (recommended) or npm
 - Node.js 20+
-- npm
-- A Clerk application
-- An Appwrite project
-- An Appwrite database created ahead of time
-- An Appwrite API key with database, users, and storage access
+- Clerk app
+- Appwrite project and database
+- Appwrite API key with users, database, and storage permissions
 
-### 1. Install dependencies
+### 1) Install dependencies
+
+With Bun:
+
+```bash
+bun install
+```
+
+With npm:
 
 ```bash
 npm install
 ```
 
-### 2. Create local environment configuration
+### 2) Configure environment
 
-Start from `.env.example`, then add the full set of variables below to `.env.local`:
+Copy .env.example to .env.local and set values listed in the Environment Variables section.
 
-```env
-# Appwrite
-NEXT_PUBLIC_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
-NEXT_PUBLIC_APPWRITE_PROJECT=your_project_id
-# or NEXT_PUBLIC_APPWRITE_PROJECT_ID=your_project_id
-NEXT_PUBLIC_APPWRITE_DATABASE=your_database_id
-NEXT_PUBLIC_APPWRITE_USERS_COLLECTION=your_users_collection_id
-NEXT_PUBLIC_APPWRITE_FILES_COLLECTION=your_files_collection_id
-NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION=your_file_shares_collection_id
-NEXT_PUBLIC_APPWRITE_BUCKET=your_bucket_id
-NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE=52428800
-NEXT_APPWRITE_KEY=your_appwrite_api_key
-
-# Clerk
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
-CLERK_SECRET_KEY=your_clerk_secret_key
-NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
-NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-```
-
-Notes:
-
-- `NEXT_PUBLIC_APPWRITE_PROJECT` and `NEXT_PUBLIC_APPWRITE_PROJECT_ID` are treated as aliases. Set one or keep both identical.
-- `NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION` is optional in code, but recommended.
-- `NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE` defaults to 50 MB if omitted.
-- `NEXT_PUBLIC_CLERK_SIGN_IN_URL` and `NEXT_PUBLIC_CLERK_SIGN_UP_URL` should point to your local auth routes so middleware redirects stay in-app.
-
-### 3. Bootstrap Appwrite collections and bucket
+### 3) Bootstrap Appwrite resources
 
 ```bash
 node scripts/setup-appwrite.js
 ```
 
-The script:
+This script creates or reuses collections and bucket resources, then prints generated IDs.
 
-- loads `.env.local`
-- creates or reuses the `users`, `files`, and `file_shares` collections
-- creates the storage bucket
-- adds basic file and share indexes
+### 4) Run development server
 
-After the script runs, copy the generated collection IDs and bucket ID into `.env.local` if needed.
+With Bun:
 
-### 4. Start the app
+```bash
+bun run dev
+```
+
+With npm:
 
 ```bash
 npm run dev
 ```
 
-Then open `http://localhost:3000`.
+## Environment Variables
 
-## NPM Scripts
+| Variable | Required | Description |
+| --- | --- | --- |
+| NEXT_PUBLIC_APPWRITE_ENDPOINT | Yes | Appwrite endpoint URL |
+| NEXT_PUBLIC_APPWRITE_PROJECT or NEXT_PUBLIC_APPWRITE_PROJECT_ID | Yes | Appwrite project ID |
+| NEXT_PUBLIC_APPWRITE_DATABASE | Yes | Appwrite database ID |
+| NEXT_PUBLIC_APPWRITE_USERS_COLLECTION | Yes | users collection ID |
+| NEXT_PUBLIC_APPWRITE_FILES_COLLECTION | Yes | files collection ID |
+| NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION | Recommended | file_shares collection ID |
+| NEXT_PUBLIC_APPWRITE_BUCKET | Yes | Appwrite bucket ID |
+| NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE | Optional | Max upload bytes (default 52428800) |
+| NEXT_APPWRITE_KEY | Yes | Appwrite server API key |
+| NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY | Yes | Clerk publishable key |
+| CLERK_SECRET_KEY | Yes | Clerk secret key |
+| NEXT_PUBLIC_CLERK_SIGN_IN_URL | Yes | Sign-in route |
+| NEXT_PUBLIC_CLERK_SIGN_UP_URL | Yes | Sign-up route |
 
-| Command | Purpose |
+## Scripts and Quality Gates
+
+| Script | Purpose |
 | --- | --- |
-| `npm run dev` | Start the Next.js dev server with Turbopack |
-| `npm run typecheck` | Run `tsc --noEmit` |
-| `npm run lint` | Run ESLint |
-| `npm run test:unit` | Run unit-style Jest tests outside `test/integration` |
-| `npm run test:integration` | Run mocked integration tests |
-| `npm run test:e2e` | Run the Jest-based critical-journey test file |
-| `npm run test` | Run unit and integration suites |
-| `npm run build` | Build the production app |
-| `npm run start` | Start the production server |
-| `npm run ci:verify` | Fresh install plus typecheck, lint, test, and build |
-| `npm run test:ci` | Typecheck, lint, test, and build without reinstalling |
+| dev | Start Next.js with Turbopack |
+| typecheck | TypeScript compile check |
+| lint | ESLint checks |
+| test:unit | Unit-focused Jest run |
+| test:integration | Integration test folder run |
+| test:e2e | Jest critical-journey tests |
+| test | Unit + integration |
+| build | Production build |
+| start | Production server |
+| ci:verify | Fresh install + full verification |
+| test:ci | Typecheck + lint + test + build |
 
-## Verification Status
+## CI and Delivery
 
-Verified in this workspace on April 9, 2026:
+GitHub Actions workflow currently runs on:
+- push to main and dev
+- pull request to main
 
-- `npm run typecheck` passed
-- `npm run lint` passed
-- `npm run test` passed
-
-The current test suite focuses on middleware, auth provisioning, upload initiation, file operation permissions, and secure download authorization. The repo does not currently include a browser-driven E2E runner in `package.json`; the `test:e2e` target is a Jest test.
+CI stages:
+1. Install dependencies
+2. Type check
+3. Lint
+4. Test
+5. Build
 
 ## Known Constraints
 
-- The storage usage chart is based on a fixed 2 GB cap, not a live Appwrite quota.
-- Search is implemented through a debounced client component that calls the server action directly and returns up to 8 results.
-- Shared access works best when every shared email belongs to a user that has already been provisioned into the Appwrite `users` collection.
-- If you rely on the bucket created by the setup script, review its allowed file extensions before production use.
+- Dashboard storage chart uses a fixed 2 GB cap in application logic.
+- Rate limiter currently uses process memory (single-instance oriented).
+- Search suggestions are server-action driven from client debounce.
+- Setup script is not a versioned migration system.
+- test:e2e is not browser automation yet.
+
+## Improvement Roadmap
+
+Priority 1:
+- Introduce precomputed user storage aggregates.
+- Move rate limiting to distributed storage.
+- Add explicit action result contracts for UI reliability.
+
+Priority 2:
+- Add browser-driven E2E test suite.
+- Replace setup script approach with versioned migrations.
+- Optimize share-lookup data access path for higher scale.
+
+Priority 3:
+- Stabilize dependency strategy around non-RC React releases.
+- Expand observability with tracing and latency dashboards.
 
 ## Troubleshooting
 
-### Auth routes do not render correctly
+### Sign-in/sign-up issues
 
-- Confirm the public routes remain `/sign-in/[[...rest]]` and `/sign-up/[[...rest]]`.
-- Confirm `middleware.ts` keeps `/sign-in(.*)` and `/sign-up(.*)` public.
+- Validate Clerk keys and auth route environment variables.
+- Confirm auth routes remain public in middleware.
 
-### Upload initiation returns unauthorized
+### Upload initiation unauthorized
 
-- Confirm the user is signed in with Clerk.
-- Confirm `getCurrentUser()` can create or resolve the Appwrite `users` document.
-- Confirm your Appwrite API key and collection IDs are valid.
+- Verify Clerk session exists.
+- Verify users collection and Appwrite key permissions.
+- Verify user profile provisioning is successful.
 
-### Downloads return 403
+### Download returns forbidden
 
-- Confirm the file belongs to the current user or has an active share record.
-- Confirm the `file_shares` collection ID is set if you want indexed share lookups.
-- Confirm the Appwrite Storage permissions still include the intended users.
+- Verify ownership or active share exists.
+- Verify file_shares collection ID is configured.
+- Verify storage permissions were updated correctly.
 
-### Setup script fails immediately
+### Setup script failures
 
-- Confirm `.env.local` exists.
-- Confirm `NEXT_PUBLIC_APPWRITE_DATABASE` points to an existing database.
-- Confirm your Appwrite project ID and API key are valid.
+- Ensure .env.local exists and values are valid.
+- Ensure target Appwrite database already exists.
+- Ensure API key includes required users/database/storage scopes.
