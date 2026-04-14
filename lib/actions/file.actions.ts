@@ -7,6 +7,16 @@ import { z } from "zod";
 import { appwriteConfig } from "@/lib/appwrite/config";
 import { createAdminClient } from "@/lib/appwrite";
 import { toAppwriteAuthUserId } from "@/lib/appwrite/auth-user";
+import {
+  buildDashboardCacheKey,
+  buildUserFilesCacheKey,
+  CACHE_TTL_SECONDS,
+  createUserFilesCacheFingerprint,
+  getCachedJson,
+  incrementUploadCount,
+  invalidateFileAndUserCaches,
+  setCachedJson,
+} from "@/lib/cache";
 import { getFileType, parseStringify } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/actions/user.actions";
 import { fileRepository } from "@/lib/repositories/file.repository";
@@ -33,6 +43,8 @@ const buildDefaultTotalSpace = () => ({
   used: 0,
   all: 2 * 1024 * 1024 * 1024,
 });
+
+type TotalSpaceSummary = ReturnType<typeof buildDefaultTotalSpace>;
 
 const normalizeAndValidateEmails = (emails: string[]) => {
   const sanitizedEmails: string[] = [];
@@ -161,6 +173,14 @@ export const createFileMetadata = async ({
     revalidatePath(path);
     revalidateFileTags(currentUser.clerkUserId, documentId);
 
+    await Promise.all([
+      invalidateFileAndUserCaches({
+        ownerUserId: currentUser.clerkUserId,
+        invalidateOwnerDashboard: true,
+      }),
+      incrementUploadCount(currentUser.clerkUserId),
+    ]);
+
     logger.info("Stored uploaded file metadata", {
       requestId,
       userId: currentUser.clerkUserId,
@@ -188,6 +208,23 @@ export const getFiles = async ({
 
   try {
     const currentUser = await requireCurrentUser(requestId);
+    const resolvedLimit = typeof limit === "number" ? limit : 20;
+    const cacheFingerprint = createUserFilesCacheFingerprint({
+      types,
+      searchText,
+      sort,
+      limit: resolvedLimit,
+      cursor,
+    });
+    const cacheKey = buildUserFilesCacheKey(
+      currentUser.clerkUserId,
+      cacheFingerprint,
+    );
+    const cachedFiles = await getCachedJson<Record<string, unknown>>(cacheKey);
+
+    if (cachedFiles) {
+      return parseStringify(cachedFiles);
+    }
 
     const files = await fileRepository.listFiles({
       principal: {
@@ -197,8 +234,13 @@ export const getFiles = async ({
       types,
       searchText,
       sort,
-      limit,
+      limit: resolvedLimit,
       cursor,
+    });
+
+    await setCachedJson(cacheKey, files, {
+      ttlSeconds: CACHE_TTL_SECONDS.userFiles,
+      userFilesIndexUserId: currentUser.clerkUserId,
     });
 
     return parseStringify(files);
@@ -221,6 +263,13 @@ export const renameFile = async ({
   try {
     const { storage } = await createAdminClient();
     const { file, currentUser } = await ensureFileOwner(fileId, requestId);
+    const relatedSharedUserIds = await getSharedClerkUserIds(
+      Array.isArray(file.users)
+        ? file.users
+            .map((email) => String(email || "").trim().toLowerCase())
+            .filter((email) => email.length > 0)
+        : [],
+    );
 
     const newName = `${name}.${extension}`;
     const previousName = String(file.name || "");
@@ -258,6 +307,12 @@ export const renameFile = async ({
 
     revalidatePath(path);
     revalidateFileTags(currentUser.clerkUserId, fileId);
+
+    await invalidateFileAndUserCaches({
+      fileId,
+      ownerUserId: currentUser.clerkUserId,
+      relatedUserIds: relatedSharedUserIds,
+    });
 
     return parseStringify(updatedFile);
   } catch (error) {
@@ -350,6 +405,14 @@ export const updateFileUsers = async ({
     revalidatePath(path);
     revalidateFileTags(currentUser.clerkUserId, fileId);
 
+    await invalidateFileAndUserCaches({
+      fileId,
+      ownerUserId: currentUser.clerkUserId,
+      relatedUserIds: Array.from(
+        new Set([...previousSharedClerkUserIds, ...sharedClerkUserIds]),
+      ),
+    });
+
     return parseStringify(updatedFile);
   } catch (error) {
     handleError(error, "Failed to update file users", {
@@ -365,6 +428,13 @@ export const deleteFile = async ({ fileId, path }: DeleteFileProps) => {
   try {
     const { storage } = await createAdminClient();
     const { file, currentUser } = await ensureFileOwner(fileId, requestId);
+    const relatedSharedUserIds = await getSharedClerkUserIds(
+      Array.isArray(file.users)
+        ? file.users
+            .map((email) => String(email || "").trim().toLowerCase())
+            .filter((email) => email.length > 0)
+        : [],
+    );
 
     try {
       await storage.deleteFile(appwriteConfig.bucketId, file.bucketField);
@@ -387,6 +457,13 @@ export const deleteFile = async ({ fileId, path }: DeleteFileProps) => {
     revalidatePath(path);
     revalidateFileTags(currentUser.clerkUserId, fileId);
 
+    await invalidateFileAndUserCaches({
+      fileId,
+      ownerUserId: currentUser.clerkUserId,
+      relatedUserIds: relatedSharedUserIds,
+      invalidateOwnerDashboard: true,
+    });
+
     return parseStringify({ status: "success" });
   } catch (error) {
     handleError(error, "Failed to delete file", {
@@ -401,6 +478,12 @@ export async function getTotalSpaceUsed() {
 
   try {
     const currentUser = await requireCurrentUser(requestId);
+    const cacheKey = buildDashboardCacheKey(currentUser.clerkUserId);
+    const cachedTotalSpace = await getCachedJson<TotalSpaceSummary>(cacheKey);
+
+    if (cachedTotalSpace) {
+      return parseStringify(cachedTotalSpace);
+    }
 
     const files = await fileRepository.listOwnedFiles(currentUser.clerkUserId);
 
@@ -418,6 +501,10 @@ export async function getTotalSpaceUsed() {
       }
 
       totalSpace.used += size;
+    });
+
+    await setCachedJson(cacheKey, totalSpace, {
+      ttlSeconds: CACHE_TTL_SECONDS.dashboard,
     });
 
     return parseStringify(totalSpace);

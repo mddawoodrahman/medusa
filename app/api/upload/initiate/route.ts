@@ -51,10 +51,10 @@ export async function POST(request: NextRequest) {
     }
 
     const clientIp = getClientIp(request);
-    const rateLimitKey = `${currentUser.clerkUserId}:${clientIp}`;
-    const rateLimitResult = checkRateLimit({
-      scope: "upload-initiate",
-      key: rateLimitKey,
+    const rateLimitResult = await checkRateLimit({
+      scope: "upload",
+      userId: currentUser.clerkUserId,
+      ip: clientIp,
       maxRequests: 20,
       windowMs: 60_000,
     });

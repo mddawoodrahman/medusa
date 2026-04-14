@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { appwriteConfig } from "@/lib/appwrite/config";
 import { createAdminClient } from "@/lib/appwrite";
 import { getCurrentUser } from "@/lib/actions/user.actions";
+import { incrementDownloadCount } from "@/lib/cache";
 import { fileRepository } from "@/lib/repositories/file.repository";
 import { createRequestId, logger } from "@/lib/observability/logger";
 import { checkRateLimit } from "@/lib/security/rate-limit";
@@ -89,10 +90,10 @@ export async function GET(
     }
 
     const clientIp = getClientIp(request);
-    const rateLimitKey = `${currentUser.clerkUserId}:${clientIp}`;
-    const rateLimitResult = checkRateLimit({
+    const rateLimitResult = await checkRateLimit({
       scope: "download",
-      key: rateLimitKey,
+      userId: currentUser.clerkUserId,
+      ip: clientIp,
       maxRequests: 120,
       windowMs: 60_000,
     });
@@ -199,6 +200,8 @@ export async function GET(
       fileId: id,
       mode,
     });
+
+    await incrementDownloadCount(currentUser.clerkUserId);
 
     return new NextResponse(content, { status: 200, headers });
   } catch (error) {

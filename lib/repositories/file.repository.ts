@@ -2,6 +2,13 @@ import { createAdminClient } from "@/lib/appwrite";
 import { appwriteConfig } from "@/lib/appwrite/config";
 import { ID, Query } from "node-appwrite";
 import { logger } from "@/lib/observability/logger";
+import {
+  buildFileCacheKey,
+  CACHE_TTL_SECONDS,
+  getCachedJson,
+  invalidateFileMetadataCache,
+  setCachedJson,
+} from "@/lib/cache";
 
 type Principal = {
   clerkUserId: string;
@@ -165,12 +172,25 @@ export const fileRepository = {
   },
 
   getById: async (fileId: string) => {
+    const cacheKey = buildFileCacheKey(fileId);
+    const cached = await getCachedJson<Record<string, unknown>>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
     const { databases } = await createAdminClient();
-    return databases.getDocument(
+    const document = await databases.getDocument(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
       fileId,
     );
+
+    await setCachedJson(cacheKey, document, {
+      ttlSeconds: CACHE_TTL_SECONDS.fileMetadata,
+    });
+
+    return document;
   },
 
   createMetadata: async ({
@@ -181,31 +201,47 @@ export const fileRepository = {
     data: Record<string, unknown>;
   }) => {
     const { databases } = await createAdminClient();
-    return databases.createDocument(
+    const document = await databases.createDocument(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
       id ?? ID.unique(),
       data,
     );
+
+    await setCachedJson(buildFileCacheKey(document.$id), document, {
+      ttlSeconds: CACHE_TTL_SECONDS.fileMetadata,
+    });
+
+    return document;
   },
 
   updateMetadata: async (fileId: string, data: Record<string, unknown>) => {
     const { databases } = await createAdminClient();
-    return databases.updateDocument(
+    const updated = await databases.updateDocument(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
       fileId,
       data,
     );
+
+    await setCachedJson(buildFileCacheKey(fileId), updated, {
+      ttlSeconds: CACHE_TTL_SECONDS.fileMetadata,
+    });
+
+    return updated;
   },
 
   deleteMetadata: async (fileId: string) => {
     const { databases } = await createAdminClient();
-    return databases.deleteDocument(
+    const result = await databases.deleteDocument(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
       fileId,
     );
+
+    await invalidateFileMetadataCache(fileId);
+
+    return result;
   },
 
   listOwnedFiles: async (clerkUserId: string) => {
