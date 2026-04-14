@@ -22,10 +22,10 @@ Upload, organize, preview, and share files through an authorization-first workfl
 
 ## Overview
 
-Medusa is a production-grade file management platform built with **Next.js 15 App Router**, **Clerk**, and **Appwrite**. It supports direct browser uploads through short-lived Appwrite credentials, private file delivery through a Next.js proxy route, and share management backed by Appwrite database and storage permissions.
+Medusa is a production-grade file management platform built with **Next.js 15 App Router**, **Clerk**, **Appwrite**, and **Redis**. It supports direct browser uploads through short-lived Appwrite credentials, private file delivery through a Next.js proxy route, and share management backed by Appwrite database and storage permissions.
 
 ```text
-Browser -> Clerk Auth -> Next.js Server Actions -> Appwrite Repositories -> Appwrite Cloud
+Browser -> Clerk Auth -> Next.js Server Actions -> Redis (rate limit/cache/counters) -> Appwrite Repositories -> Appwrite Cloud
                   |
                   v
          Protected File Proxy -> Streamed Response (view/download/thumbnail)
@@ -42,7 +42,9 @@ Browser -> Clerk Auth -> Next.js Server Actions -> Appwrite Repositories -> Appw
 | Search and pagination | Debounced search with paginated file listing pages |
 | File sharing | Share by email with metadata updates and Appwrite Storage permission sync |
 | Dashboard analytics | Storage usage summary cards and recent-file activity |
-| Rate limiting | Upload initiation and download routes include abuse protection |
+| Distributed rate limiting | Upload and download routes use Redis-backed fixed-window limits with user + IP scoping |
+| Redis caching | Cache-first reads for file metadata, file listings, and dashboard totals with mutation invalidation |
+| Usage counters | Per-user upload and download counters are tracked atomically for SaaS analytics and quotas |
 | Structured logging | Server-side request logging includes request IDs for traceability |
 
 ## Tech Stack
@@ -53,6 +55,7 @@ Browser -> Clerk Auth -> Next.js Server Actions -> Appwrite Repositories -> Appw
 | Runtime UI | React 19 RC |
 | Language | TypeScript 5 |
 | Auth | Clerk |
+| Distributed system layer | Redis (ioredis) |
 | Backend and storage | Appwrite Database, Storage, and Users |
 | Styling | Tailwind CSS, shadcn/ui, Radix UI |
 | Validation | Zod |
@@ -69,6 +72,7 @@ Browser
   -> Clerk Middleware
   -> Next.js App Router
   -> Server Actions / API Routes
+  -> Redis (rate limits, cache, usage counters)
   -> Repository Layer
   -> Appwrite Cloud
 ```
@@ -155,7 +159,7 @@ Browser
 - File delivery checks ownership or active share access before streaming content.
 - Appwrite Storage permissions are synchronized when files are shared or unshared.
 - Public storage read permissions are not granted; file access flows through the protected proxy.
-- Upload and download routes apply in-memory rate limiting.
+- Upload and download routes apply Redis-backed distributed rate limiting (with bounded local fallback if Redis is unavailable).
 
 ## API Reference
 
@@ -198,6 +202,7 @@ Streams a file after server-side authorization.
 - Clerk application
 - Appwrite project and database
 - Appwrite API key with users, database, and storage scopes
+- Redis instance (local or managed, such as Azure Cache for Redis)
 
 ### 1. Install Dependencies
 
@@ -239,6 +244,14 @@ or:
 npm run dev
 ```
 
+### 5. Optional: Run App + Redis with Docker Compose
+
+```bash
+docker compose up --build
+```
+
+This uses the app image and a Redis service defined in `docker-compose.yml`.
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -253,6 +266,7 @@ npm run dev
 | `NEXT_PUBLIC_APPWRITE_BUCKET` | Yes | Appwrite storage bucket ID |
 | `NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE` | Optional | Max upload bytes, default `52428800` |
 | `NEXT_APPWRITE_KEY` | Yes | Appwrite server API key |
+| `REDIS_URL` | Recommended | Redis connection string (for example `redis://redis:6379` locally or `rediss://...` for managed TLS) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
 | `CLERK_SECRET_KEY` | Yes | Clerk secret key |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route |
@@ -291,7 +305,7 @@ Install -> Typecheck -> Lint -> Test -> Build
 ## Known Constraints
 
 - Dashboard storage usage uses a fixed 2 GB cap in application logic.
-- Rate limiting uses process memory and is intended for single-instance deployments.
+- If `REDIS_URL` is not configured or Redis is unavailable, rate limiting falls back to bounded process memory.
 - `test:e2e` currently runs Jest route tests rather than browser-driven automation.
 - `scripts/setup-appwrite.js` is a bootstrap tool, not a versioned migration system.
 - React is pinned to RC builds while the project uses React 18 type packages.
@@ -301,7 +315,7 @@ Install -> Typecheck -> Lint -> Test -> Build
 ### Priority 1: Reliability and Scale
 
 - Precompute per-user storage aggregates to reduce dashboard scan cost.
-- Move rate limiting to a distributed backing store such as Redis.
+- Add plan-aware quota enforcement using Redis usage counters.
 - Introduce explicit Server Action result contracts for deterministic UI state.
 
 ### Priority 2: Quality and Correctness
