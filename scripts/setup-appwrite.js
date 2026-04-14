@@ -1,7 +1,7 @@
 // ✅ FORCE LOAD ENV (VERY IMPORTANT)
 require("dotenv").config({ path: ".env.local" });
 
-const { Client, Databases, Storage, ID } = require("node-appwrite");
+const { Client, Databases, Storage, ID, Permission, Role } = require("node-appwrite");
 
 const APPWRITE_PROJECT_ID =
   process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID ||
@@ -26,6 +26,55 @@ const databases = new Databases(client);
 const storage = new Storage(client);
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE;
+const USERS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_USERS_COLLECTION;
+const FILES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_FILES_COLLECTION;
+const FILE_SHARES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION;
+const MAX_UPLOAD_SIZE_BYTES = Number(
+  process.env.NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE || 50 * 1024 * 1024,
+);
+const BUCKET_NAME = "files-bucket";
+const ALLOWED_FILE_EXTENSIONS = [
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "svg",
+  "webp",
+  "pdf",
+  "doc",
+  "docx",
+  "txt",
+  "csv",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "mp4",
+  "webm",
+  "mov",
+  "mp3",
+  "wav",
+  "ogg",
+  "zip",
+];
+
+const buildBucketPermissions = () => [Permission.create(Role.users())];
+
+async function resolveExistingCollection(preferredId, fallbackName) {
+  if (preferredId) {
+    try {
+      const byId = await databases.getCollection(DATABASE_ID, preferredId);
+      return byId;
+    } catch {
+      console.log(`⚠️ Env collection id not found for ${fallbackName}:`, preferredId);
+    }
+  }
+
+  const list = await databases.listCollections(DATABASE_ID);
+  const byName = list.collections.find((c) => c.name === fallbackName);
+
+  return byName || null;
+}
 
 async function createIndexIfNeeded(collectionId, key, type, attributes, orders) {
   try {
@@ -50,7 +99,12 @@ async function createIndexIfNeeded(collectionId, key, type, attributes, orders) 
 async function setupUsersCollection() {
   let collectionId;
 
-  try {
+  const existing = await resolveExistingCollection(USERS_COLLECTION_ID, "users");
+
+  if (existing) {
+    collectionId = existing.$id;
+    console.log("ℹ️ Reusing users collection:", collectionId);
+  } else {
     const res = await databases.createCollection(
       DATABASE_ID,
       ID.unique(),
@@ -58,12 +112,6 @@ async function setupUsersCollection() {
     );
     collectionId = res.$id;
     console.log("✅ Users collection created:", collectionId);
-  } catch {
-    console.log("⚠️ Users collection may already exist");
-
-    const list = await databases.listCollections(DATABASE_ID);
-    const existing = list.collections.find(c => c.name === "users");
-    collectionId = existing?.$id;
   }
 
   if (!collectionId) throw new Error("Users collection not found");
@@ -97,7 +145,12 @@ async function setupUsersCollection() {
 async function setupFilesCollection() {
   let collectionId;
 
-  try {
+  const existing = await resolveExistingCollection(FILES_COLLECTION_ID, "files");
+
+  if (existing) {
+    collectionId = existing.$id;
+    console.log("ℹ️ Reusing files collection:", collectionId);
+  } else {
     const res = await databases.createCollection(
       DATABASE_ID,
       ID.unique(),
@@ -105,12 +158,6 @@ async function setupFilesCollection() {
     );
     collectionId = res.$id;
     console.log("✅ Files collection created:", collectionId);
-  } catch {
-    console.log("⚠️ Files collection may already exist");
-
-    const list = await databases.listCollections(DATABASE_ID);
-    const existing = list.collections.find(c => c.name === "files");
-    collectionId = existing?.$id;
   }
 
   if (!collectionId) throw new Error("Files collection not found");
@@ -177,7 +224,15 @@ async function setupFilesCollection() {
 async function setupFileSharesCollection() {
   let collectionId;
 
-  try {
+  const existing = await resolveExistingCollection(
+    FILE_SHARES_COLLECTION_ID,
+    "file_shares",
+  );
+
+  if (existing) {
+    collectionId = existing.$id;
+    console.log("ℹ️ Reusing file_shares collection:", collectionId);
+  } else {
     const res = await databases.createCollection(
       DATABASE_ID,
       ID.unique(),
@@ -185,12 +240,6 @@ async function setupFileSharesCollection() {
     );
     collectionId = res.$id;
     console.log("✅ File shares collection created:", collectionId);
-  } catch {
-    console.log("⚠️ File shares collection may already exist");
-
-    const list = await databases.listCollections(DATABASE_ID);
-    const existing = list.collections.find((c) => c.name === "file_shares");
-    collectionId = existing?.$id;
   }
 
   if (!collectionId) throw new Error("File shares collection not found");
@@ -256,19 +305,69 @@ async function setupFileSharesCollection() {
 // 🪣 STORAGE BUCKET
 // ==============================
 async function setupBucket() {
+  const bucketPermissions = buildBucketPermissions();
+
+  const applyBucketSecurity = async (bucketId, name, enabled, compression, encryption, antivirus) => {
+    await storage.updateBucket(
+      bucketId,
+      name,
+      bucketPermissions,
+      true,
+      enabled,
+      MAX_UPLOAD_SIZE_BYTES,
+      ALLOWED_FILE_EXTENSIONS,
+      compression,
+      encryption,
+      antivirus,
+    );
+  };
+
   try {
-    const res = await storage.createBucket(
+    const existingBucketId = process.env.NEXT_PUBLIC_APPWRITE_BUCKET;
+
+    if (existingBucketId) {
+      try {
+        const existingBucket = await storage.getBucket(existingBucketId);
+
+        await applyBucketSecurity(
+          existingBucket.$id,
+          existingBucket.name,
+          existingBucket.enabled,
+          existingBucket.compression,
+          existingBucket.encryption,
+          existingBucket.antivirus,
+        );
+
+        console.log("✅ Bucket security updated:", existingBucket.$id);
+        return;
+      } catch (error) {
+        console.log("⚠️ Could not update bucket by NEXT_PUBLIC_APPWRITE_BUCKET, creating a new one");
+        if (error?.message) {
+          console.log("ℹ️ Reason:", error.message);
+        }
+      }
+    }
+
+    const created = await storage.createBucket(
       ID.unique(),
-      "files-bucket",
-      ["jpg", "png", "pdf", "docx", "mp4"],
+      BUCKET_NAME,
+      bucketPermissions,
       true,
       true,
-      50 * 1024 * 1024
+      MAX_UPLOAD_SIZE_BYTES,
+      ALLOWED_FILE_EXTENSIONS,
+      "none",
+      true,
+      true,
     );
 
-    console.log("✅ Bucket created:", res.$id);
-  } catch {
-    console.log("⚠️ Bucket may already exist");
+    console.log("✅ Bucket created:", created.$id);
+    console.log("ℹ️ Set NEXT_PUBLIC_APPWRITE_BUCKET to:", created.$id);
+  } catch (error) {
+    console.log("⚠️ Bucket setup failed");
+    if (error?.message) {
+      console.log("ℹ️ Reason:", error.message);
+    }
   }
 }
 

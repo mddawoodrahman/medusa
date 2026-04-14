@@ -4,6 +4,7 @@ const authMock: any = jest.fn();
 const getCurrentUserMock: any = jest.fn();
 const ensureAppwriteAuthUserMock: any = jest.fn();
 const createTokenMock: any = jest.fn();
+const checkRateLimitMock: any = jest.fn();
 
 jest.mock("@clerk/nextjs/server", () => ({
   auth: authMock,
@@ -43,10 +44,20 @@ jest.mock("@/lib/observability/logger", () => ({
   },
 }));
 
+jest.mock("@/lib/security/rate-limit", () => ({
+  checkRateLimit: checkRateLimitMock,
+}));
+
 describe("upload initiate route", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
+
+    checkRateLimitMock.mockResolvedValue({
+      success: true,
+      remaining: 19,
+      resetMs: Date.now() + 60_000,
+    });
   });
 
   it("returns 401 for unauthenticated requests", async () => {
@@ -89,8 +100,11 @@ describe("upload initiate route", () => {
     expect(body.upload.bucketId).toBe("bucket_123");
     expect(body.token.secret).toBe("secret_token");
     expect(body.upload.permissions.some((permission: string) => permission.includes("user:"))).toBe(true);
+    expect(body.upload.permissions.some((permission: string) => permission.startsWith("write("))).toBe(true);
+    expect(body.upload.permissions.some((permission: string) => permission.startsWith("create("))).toBe(false);
     expect(body.upload.permissions.some((permission: string) => permission.includes("any"))).toBe(false);
     expect(typeof body.rateLimit.remaining).toBe("number");
+    expect(createTokenMock).toHaveBeenCalledWith("clerk_hashed_owner", 10, 300);
   });
 
   it("returns 400 for invalid upload payload", async () => {
@@ -109,5 +123,29 @@ describe("upload initiate route", () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  it("returns 429 when upload rate limit is exceeded", async () => {
+    authMock.mockResolvedValue({ userId: "user_clerk_1" });
+    getCurrentUserMock.mockResolvedValue({
+      clerkUserId: "user_clerk_1",
+      email: "owner@example.com",
+      fullName: "Owner User",
+    });
+    checkRateLimitMock.mockResolvedValue({
+      success: false,
+      remaining: 0,
+      resetMs: Date.now() + 5_000,
+    });
+
+    const { POST } = require("../../app/api/upload/initiate/route");
+
+    const response = await POST({
+      headers: new Headers(),
+      json: async () => ({ fileName: "invoice.pdf", size: 1024 }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(createTokenMock).not.toHaveBeenCalled();
   });
 });

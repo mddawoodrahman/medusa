@@ -18,10 +18,11 @@ export const Thumbnail = ({
   className,
 }: Props) => {
   const isImage = type === "image" && extension !== "svg";
+  const protectedRoutePattern = /\/api\/files\/download\/([^?]+)/;
   const isProtectedInternalImage =
-    isImage && url.startsWith("/api/files/download/");
+    isImage && protectedRoutePattern.test(url);
   const protectedFileId = isProtectedInternalImage
-    ? url.match(/\/api\/files\/download\/([^?]+)/)?.[1]
+    ? url.match(protectedRoutePattern)?.[1]
     : null;
   const imageSrc = protectedFileId
     ? `/api/files/download/${protectedFileId}?mode=thumbnail&w=160&h=160`

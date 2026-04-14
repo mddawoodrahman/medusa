@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/appwrite";
 import { appwriteConfig } from "@/lib/appwrite/config";
-import { ID, Query } from "node-appwrite";
+import { toAppwriteAuthUserId } from "@/lib/appwrite/auth-user";
+import { ID, Permission, Query, Role } from "node-appwrite";
 
 type CreateUserInput = {
   clerkUserId: string;
@@ -52,6 +53,12 @@ export const userRepository = {
       return existing.documents[0];
     }
 
+    const ownerAuthUserId = toAppwriteAuthUserId(clerkUserId);
+    const permissions = [
+      Permission.read(Role.user(ownerAuthUserId)),
+      Permission.write(Role.user(ownerAuthUserId)),
+    ];
+
     return databases.createDocument(
       appwriteConfig.databaseId,
       usersCollectionId,
@@ -62,6 +69,7 @@ export const userRepository = {
         avatar,
         clerkUserId,
       },
+      permissions,
     );
   },
 };

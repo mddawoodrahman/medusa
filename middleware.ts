@@ -1,7 +1,12 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 import { createRequestId, logger } from "@/lib/observability/logger";
 
-const isPublicRoute = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
+const isPublicRoute = createRouteMatcher([
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/api/health/startup(.*)",
+]);
 
 export default clerkMiddleware(async (auth, req) => {
   const requestId = req.headers.get("x-request-id") ?? createRequestId();
@@ -21,13 +26,24 @@ export default clerkMiddleware(async (auth, req) => {
     route,
   });
 
-  await auth.protect(
-    isApiRoute
-      ? undefined
-      : {
-          unauthenticatedUrl: new URL("/sign-in", req.url).toString(),
-        },
-  );
+  if (isApiRoute) {
+    const { userId } = await auth();
+
+    if (!userId) {
+      logger.warn("Middleware blocked unauthenticated API request", {
+        requestId,
+        route,
+      });
+
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    return;
+  }
+
+  await auth.protect({
+    unauthenticatedUrl: new URL("/sign-in", req.url).toString(),
+  });
 });
 
 export const config = {

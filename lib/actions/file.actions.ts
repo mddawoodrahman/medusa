@@ -77,6 +77,17 @@ const isAppwriteNotFoundError = (error: unknown) => {
   return Number((error as { code?: unknown }).code) === 404;
 };
 
+const getApplicationBaseUrl = () => {
+  const configuredBaseUrl =
+    process.env.NEXT_PUBLIC_APP_URL || process.env.APP_BASE_URL;
+
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+
+  return "http://localhost:3000";
+};
+
 const requireCurrentUser = async (requestId: string) => {
   const currentUser = await getCurrentUser();
 
@@ -150,15 +161,73 @@ export const createFileMetadata = async ({
 
   try {
     const currentUser = await requireCurrentUser(requestId);
-    const fileType = getFileType(fileName);
+    const existing = await fileRepository.getByBucketFieldAndOwner({
+      bucketFileId,
+      clerkUserId: currentUser.clerkUserId,
+    });
+
+    if (existing) {
+      logger.info("Reused existing file metadata for uploaded object", {
+        requestId,
+        userId: currentUser.clerkUserId,
+        route: "file.actions.createFileMetadata",
+        fileId: existing.$id,
+      });
+
+      return parseStringify(existing);
+    }
+
+    const { storage } = await createAdminClient();
+    let storageFile;
+
+    try {
+      storageFile = await storage.getFile(appwriteConfig.bucketId, bucketFileId);
+    } catch (error) {
+      if (isAppwriteNotFoundError(error)) {
+        logger.warn("Upload reconciliation failed: storage object not found", {
+          requestId,
+          userId: currentUser.clerkUserId,
+          route: "file.actions.createFileMetadata",
+          bucketFileId,
+        });
+
+        throw new Error("Uploaded file could not be verified");
+      }
+
+      throw error;
+    }
+
+    const verifiedFileName = String(storageFile.name || fileName);
+    const verifiedFileSize =
+      Number.isFinite(Number(storageFile.sizeOriginal))
+        ? Number(storageFile.sizeOriginal)
+        : size;
+
+    if (verifiedFileName !== fileName || verifiedFileSize !== size) {
+      logger.warn("Upload reconciliation normalized file metadata from storage", {
+        requestId,
+        userId: currentUser.clerkUserId,
+        route: "file.actions.createFileMetadata",
+        providedFileName: fileName,
+        verifiedFileName,
+        providedSize: size,
+        verifiedFileSize,
+      });
+    }
+
+    const fileType = getFileType(verifiedFileName);
     const documentId = ID.unique();
+    const fileViewUrl = new URL(
+      `/api/files/download/${documentId}?mode=view`,
+      getApplicationBaseUrl(),
+    ).toString();
 
     const fileDocument = {
       type: fileType.type,
-      name: fileName,
-      url: `/api/files/download/${documentId}?mode=view`,
+      name: verifiedFileName,
+      url: fileViewUrl,
       extension: fileType.extension,
-      size,
+      size: verifiedFileSize,
       clerkUserId: currentUser.clerkUserId,
       ownerName: currentUser.fullName,
       users: [],

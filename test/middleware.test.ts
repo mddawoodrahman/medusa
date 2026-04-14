@@ -56,7 +56,7 @@ describe("middleware", () => {
     });
   });
 
-  it("skips protect on sign-in and sign-up routes", async () => {
+  it("skips protect on public routes", async () => {
     const module = require("../middleware");
     const middleware = module.default as (
       auth: { protect: () => Promise<void> },
@@ -85,7 +85,48 @@ describe("middleware", () => {
         nextUrl: { pathname: "/sign-up/sso-callback" },
       },
     );
+    await middleware(
+      { protect },
+      {
+        url: "http://localhost:3000/api/health/startup",
+        headers: { get: () => null },
+        nextUrl: { pathname: "/api/health/startup" },
+      },
+    );
 
+    expect(protect).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 for unauthenticated API routes", async () => {
+    const module = require("../middleware");
+    const middleware = module.default as (
+      auth: {
+        (): Promise<{ userId: string | null }>;
+        protect: () => Promise<void>;
+      },
+      req: {
+        url: string;
+        headers: { get: (key: string) => string | null };
+        nextUrl: { pathname: string };
+      },
+    ) => Promise<Response | void>;
+
+    const protect = jest.fn<() => Promise<void>>(async () => undefined);
+    const auth = Object.assign(jest.fn(async () => ({ userId: null })), {
+      protect,
+    }) as {
+      (): Promise<{ userId: string | null }>;
+      protect: () => Promise<void>;
+    };
+
+    const response = await middleware(auth, {
+      url: "http://localhost:3000/api/upload/initiate",
+      headers: { get: () => null },
+      nextUrl: { pathname: "/api/upload/initiate" },
+    });
+
+    expect(response).toBeDefined();
+    expect(response?.status).toBe(401);
     expect(protect).not.toHaveBeenCalled();
   });
 
@@ -95,6 +136,7 @@ describe("middleware", () => {
     expect(createRouteMatcherMock).toHaveBeenCalledWith([
       "/sign-in(.*)",
       "/sign-up(.*)",
+      "/api/health/startup(.*)",
     ]);
 
     expect(module.config.matcher).toContain("/(api|trpc)(.*)");

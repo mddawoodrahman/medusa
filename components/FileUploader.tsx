@@ -34,6 +34,24 @@ type UploadInitiationResponse = {
   };
 };
 
+const resolveUploadErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof (error as { message?: unknown }).message === "string" &&
+    (error as { message: string }).message.trim().length > 0
+  ) {
+    return (error as { message: string }).message;
+  }
+
+  return fallback;
+};
+
 const FileUploader = ({ className }: Props) => {
   const path = usePathname();
   const { userId } = useAuth();
@@ -47,11 +65,24 @@ const FileUploader = ({ className }: Props) => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ fileName: file.name, size: file.size }),
+        body: JSON.stringify({
+          fileName: file.name,
+          size: file.size,
+          mimeType: file.type || undefined,
+        }),
       });
 
       if (!initiateResponse.ok) {
-        throw new Error("Failed to initiate upload");
+        const failureBody = await initiateResponse
+          .json()
+          .catch(() => ({ error: "Failed to initiate upload" }));
+
+        const message =
+          typeof failureBody?.error === "string" && failureBody.error.length > 0
+            ? failureBody.error
+            : "Failed to initiate upload";
+
+        throw new Error(message);
       }
 
       const initiation =
@@ -109,13 +140,14 @@ const FileUploader = ({ className }: Props) => {
 
       setFiles(acceptedFiles);
 
-      const uploadPromises = acceptedFiles.map(async (file) => {
+      // Process uploads sequentially to avoid session churn races across parallel files.
+      for (const file of acceptedFiles) {
         if (file.size > MAX_FILE_SIZE) {
           setFiles((prevFiles) =>
             prevFiles.filter((f) => f.name !== file.name),
           );
 
-          return toast({
+          toast({
             description: (
               <p className="body-2 text-white">
                 <span className="font-semibold">{file.name}</span> is too large.
@@ -124,30 +156,36 @@ const FileUploader = ({ className }: Props) => {
             ),
             className: "error-toast",
           });
+
+          continue;
         }
 
-        return uploadDirectlyToAppwrite(file)
-          .then(() => {
-            setFiles((prevFiles) =>
-              prevFiles.filter((f) => f.name !== file.name),
-            );
-          })
-          .catch(() => {
-            toast({
-              description: (
-                <p className="body-2 text-white">
-                  Failed to upload <span className="font-semibold">{file.name}</span>.
-                </p>
-              ),
-              className: "error-toast",
-            });
-            setFiles((prevFiles) =>
-              prevFiles.filter((f) => f.name !== file.name),
-            );
-          });
-      });
+        try {
+          await uploadDirectlyToAppwrite(file);
 
-      await Promise.all(uploadPromises);
+          setFiles((prevFiles) =>
+            prevFiles.filter((f) => f.name !== file.name),
+          );
+        } catch (error) {
+          const resolvedMessage = resolveUploadErrorMessage(
+            error,
+            `Failed to upload ${file.name}.`,
+          );
+
+          toast({
+            description: (
+              <p className="body-2 text-white">
+                <span className="font-semibold">{file.name}</span>: {resolvedMessage}
+              </p>
+            ),
+            className: "error-toast",
+          });
+
+          setFiles((prevFiles) =>
+            prevFiles.filter((f) => f.name !== file.name),
+          );
+        }
+      }
     },
     [toast, uploadDirectlyToAppwrite, userId],
   );

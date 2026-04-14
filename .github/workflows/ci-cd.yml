@@ -50,4 +50,4 @@ jobs:
         run: npm run build
 
       - name: ✅ CI Completed
-        run: echo "All checks passed 🚀"
+        run: echo "All checks passed 🚀"c

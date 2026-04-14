@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/appwrite";
 import { appwriteConfig } from "@/lib/appwrite/config";
-import { ID, Query } from "node-appwrite";
+import { toAppwriteAuthUserId } from "@/lib/appwrite/auth-user";
+import { ID, Permission, Query, Role } from "node-appwrite";
 import { logger } from "@/lib/observability/logger";
 import {
   buildFileCacheKey,
@@ -35,6 +36,30 @@ const MAX_LIST_LIMIT = 100;
 const MAX_SHARED_FILE_IDS = 1000;
 
 const ALLOWED_SORT_FIELDS = new Set(["$createdAt", "name", "size"]);
+
+const buildOwnerDocumentPermissions = (ownerClerkUserId: string) => {
+  const ownerAuthUserId = toAppwriteAuthUserId(ownerClerkUserId);
+
+  return [
+    Permission.read(Role.user(ownerAuthUserId)),
+    Permission.write(Role.user(ownerAuthUserId)),
+  ];
+};
+
+const buildFileShareDocumentPermissions = (
+  ownerClerkUserId: string,
+  principal: string,
+) => {
+  const permissions = [...buildOwnerDocumentPermissions(ownerClerkUserId)];
+
+  if (!principal.includes("@")) {
+    permissions.push(
+      Permission.read(Role.user(toAppwriteAuthUserId(principal))),
+    );
+  }
+
+  return Array.from(new Set(permissions));
+};
 
 const parseSort = (sort: string) => {
   const [rawSortBy = "$createdAt", rawOrderBy = "desc"] = sort.split("-");
@@ -193,6 +218,27 @@ export const fileRepository = {
     return document;
   },
 
+  getByBucketFieldAndOwner: async ({
+    bucketFileId,
+    clerkUserId,
+  }: {
+    bucketFileId: string;
+    clerkUserId: string;
+  }) => {
+    const { databases } = await createAdminClient();
+    const result = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.filesCollectionId,
+      [
+        Query.equal("bucketField", [bucketFileId]),
+        Query.equal("clerkUserId", [clerkUserId]),
+        Query.limit(1),
+      ],
+    );
+
+    return result.documents[0] ?? null;
+  },
+
   createMetadata: async ({
     id,
     data,
@@ -201,11 +247,18 @@ export const fileRepository = {
     data: Record<string, unknown>;
   }) => {
     const { databases } = await createAdminClient();
+    const ownerClerkUserId =
+      typeof data.clerkUserId === "string" ? data.clerkUserId : null;
+    const permissions = ownerClerkUserId
+      ? buildOwnerDocumentPermissions(ownerClerkUserId)
+      : undefined;
+
     const document = await databases.createDocument(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
       id ?? ID.unique(),
       data,
+      permissions,
     );
 
     await setCachedJson(buildFileCacheKey(document.$id), document, {
@@ -400,6 +453,7 @@ export const fileRepository = {
               ownerId,
               type: "direct",
             },
+            buildFileShareDocumentPermissions(ownerId, principal),
           ),
         ),
     );

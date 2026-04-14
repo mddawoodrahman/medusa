@@ -11,11 +11,19 @@ const createRedisClient = () => {
     return null;
   }
 
-  return new Redis(redisUrl, {
+  const redis = new Redis(redisUrl, {
     maxRetriesPerRequest: 1,
     enableReadyCheck: true,
     lazyConnect: true,
   });
+
+  redis.on("error", (error) => {
+    if (process.env.NODE_ENV !== "test") {
+      console.error(`[redis] ${error.message}`);
+    }
+  });
+
+  return redis;
 };
 
 export const getRedisClient = () => {
