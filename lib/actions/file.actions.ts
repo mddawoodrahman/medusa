@@ -1,6 +1,7 @@
 "use server";
 
 import { ID, Permission, Query, Role } from "node-appwrite";
+import { headers } from "next/headers";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 
@@ -77,12 +78,53 @@ const isAppwriteNotFoundError = (error: unknown) => {
   return Number((error as { code?: unknown }).code) === 404;
 };
 
-const getApplicationBaseUrl = () => {
+const toNormalizedBaseUrl = (value: string | undefined) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim().replace(/^['\"]|['\"]$/g, "").trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return null;
+  }
+};
+
+const getApplicationBaseUrl = async () => {
   const configuredBaseUrl =
-    process.env.NEXT_PUBLIC_APP_URL || process.env.APP_BASE_URL;
+    toNormalizedBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ||
+    toNormalizedBaseUrl(process.env.APP_BASE_URL);
 
   if (configuredBaseUrl) {
     return configuredBaseUrl;
+  }
+
+  const vercelHost = process.env.VERCEL_URL
+    ?.trim()
+    .replace(/^['\"]|['\"]$/g, "")
+    .trim();
+
+  if (vercelHost) {
+    return `https://${vercelHost}`;
+  }
+
+  try {
+    const headerStore = await headers();
+    const forwardedProto = headerStore.get("x-forwarded-proto") || "https";
+    const forwardedHost =
+      headerStore.get("x-forwarded-host") || headerStore.get("host");
+
+    if (forwardedHost) {
+      return `${forwardedProto}://${forwardedHost}`;
+    }
+  } catch {
+    // Fallback is used when request headers are unavailable.
   }
 
   return "http://localhost:3000";
@@ -217,9 +259,10 @@ export const createFileMetadata = async ({
 
     const fileType = getFileType(verifiedFileName);
     const documentId = ID.unique();
+    const applicationBaseUrl = await getApplicationBaseUrl();
     const fileViewUrl = new URL(
       `/api/files/download/${documentId}?mode=view`,
-      getApplicationBaseUrl(),
+      applicationBaseUrl,
     ).toString();
 
     const fileDocument = {

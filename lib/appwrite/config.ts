@@ -1,15 +1,33 @@
+const normalizeEnvValue = (value: string | undefined) => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.replace(/^['\"]|['\"]$/g, "").trim();
+};
+
+const getEnv = (name: string) => normalizeEnvValue(process.env[name]);
+
 const appwriteProjectId =
-  process.env.NEXT_PUBLIC_APPWRITE_PROJECT ||
-  process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+  getEnv("NEXT_PUBLIC_APPWRITE_PROJECT") ||
+  getEnv("NEXT_PUBLIC_APPWRITE_PROJECT_ID");
 
 export const appwriteConfig = {
-  endpointUrl: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!,
+  endpointUrl: getEnv("NEXT_PUBLIC_APPWRITE_ENDPOINT")!,
   projectId: appwriteProjectId!,
-  databaseId: process.env.NEXT_PUBLIC_APPWRITE_DATABASE!,
-  usersCollectionId: process.env.NEXT_PUBLIC_APPWRITE_USERS_COLLECTION!,
-  filesCollectionId: process.env.NEXT_PUBLIC_APPWRITE_FILES_COLLECTION!,
-  fileSharesCollectionId: process.env.NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION,
-  bucketId: process.env.NEXT_PUBLIC_APPWRITE_BUCKET!,
-  secretKey: process.env.NEXT_APPWRITE_KEY!,
-  maxUploadSizeBytes: Number(process.env.NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE || 50 * 1024 * 1024),
+  databaseId: getEnv("NEXT_PUBLIC_APPWRITE_DATABASE")!,
+  usersCollectionId: getEnv("NEXT_PUBLIC_APPWRITE_USERS_COLLECTION")!,
+  filesCollectionId: getEnv("NEXT_PUBLIC_APPWRITE_FILES_COLLECTION")!,
+  fileSharesCollectionId: getEnv("NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION"),
+  bucketId: getEnv("NEXT_PUBLIC_APPWRITE_BUCKET")!,
+  secretKey: getEnv("NEXT_APPWRITE_KEY")!,
+  maxUploadSizeBytes: Number(
+    getEnv("NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE") || 50 * 1024 * 1024,
+  ),
 };
