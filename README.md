@@ -384,15 +384,83 @@ The app is now running at [http://localhost:3000](http://localhost:3000).
 
 ---
 
-### Optional: Run with Docker Compose
+### Run with Docker Compose (App + Redis)
 
-To run the full stack (Next.js app + Redis) in containers:
+Medusa includes first-class Docker support:
+
+- `Dockerfile` uses a multi-stage build (`deps` -> `builder` -> `runner`) and runs Next.js in standalone production mode.
+- `docker-compose.yml` starts two services:
+  - `app` (Next.js server on port `3000`)
+  - `redis` (Redis 7 on port `6379` with a persistent named volume)
+
+#### 1. Prepare environment variables
+
+```bash
+cp .env.example .env.local
+```
+
+Set all required Appwrite and Clerk values in `.env.local`.
+
+> In Compose mode, `REDIS_URL` is forced to `redis://redis:6379` for the `app` service, so the app talks to the Redis container by service name.
+
+#### 2. Build and start containers
 
 ```bash
 docker compose up --build
 ```
 
-This spins up the app image alongside a Redis service. Useful for testing rate limiting and cache behavior locally without a managed Redis instance.
+App URL: [http://localhost:3000](http://localhost:3000)
+
+#### 3. Verify startup health
+
+The startup probe endpoint validates both Redis connectivity and Appwrite bucket configuration.
+
+```bash
+# If STARTUP_HEALTH_TOKEN is NOT set
+curl http://localhost:3000/api/health/startup
+
+# If STARTUP_HEALTH_TOKEN is set
+curl -H "x-startup-health-token: <your-token>" http://localhost:3000/api/health/startup
+```
+
+#### 4. Stop containers
+
+```bash
+# Stop services
+docker compose down
+
+# Stop services and remove Redis volume
+docker compose down -v
+```
+
+#### Useful operational commands
+
+```bash
+# Follow app logs
+docker compose logs -f app
+
+# Follow redis logs
+docker compose logs -f redis
+
+# Rebuild app image after dependency/code changes
+docker compose build --no-cache app
+```
+
+### Run as a standalone production container
+
+Use this when Redis is managed externally (Upstash, Azure Cache for Redis, self-hosted TLS Redis, etc.).
+
+```bash
+docker build -t medusa:latest .
+
+docker run --rm \
+  -p 3000:3000 \
+  --env-file .env.local \
+  -e REDIS_URL=rediss://<user>:<password>@<host>:<port> \
+  medusa:latest
+```
+
+> The container image runs in production mode (`NODE_ENV=production`) and serves the standalone Next.js server (`server.js`).
 
 ---
 
@@ -402,6 +470,7 @@ Copy `.env.example` to `.env.local` and set the following:
 
 | Variable | Required | Description |
 |---|---|---|
+| `NEXT_PUBLIC_APP_URL` | Optional | Public base URL used by client/server link generation (e.g., `http://localhost:3000`) |
 | `NEXT_PUBLIC_APPWRITE_ENDPOINT` | ✅ Yes | Your Appwrite project endpoint URL |
 | `NEXT_PUBLIC_APPWRITE_PROJECT` | ✅ Yes | Appwrite project ID |
 | `NEXT_PUBLIC_APPWRITE_PROJECT_ID` | Optional | Backward-compatible project ID alias |
@@ -412,6 +481,7 @@ Copy `.env.example` to `.env.local` and set the following:
 | `NEXT_PUBLIC_APPWRITE_BUCKET` | ✅ Yes | Appwrite storage bucket ID |
 | `NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE` | Optional | Max upload size in bytes — default `52428800` (50 MB) |
 | `NEXT_APPWRITE_KEY` | ✅ Yes | Appwrite **server** API key (never expose to the client) |
+| `STARTUP_HEALTH_TOKEN` | Optional | If set, `/api/health/startup` requires the `x-startup-health-token` header |
 | `REDIS_URL` | ⚠️ Recommended | Redis connection string — `redis://localhost:6379` locally, `rediss://...` for TLS |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | ✅ Yes | Clerk publishable key |
 | `CLERK_SECRET_KEY` | ✅ Yes | Clerk secret key (server-side only) |
