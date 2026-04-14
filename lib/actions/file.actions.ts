@@ -83,7 +83,7 @@ const toNormalizedBaseUrl = (value: string | undefined) => {
     return null;
   }
 
-  const trimmed = value.trim().replace(/^['\"]|['\"]$/g, "").trim();
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "").trim();
 
   if (!trimmed) {
     return null;
@@ -107,7 +107,7 @@ const getApplicationBaseUrl = async () => {
 
   const vercelHost = process.env.VERCEL_URL
     ?.trim()
-    .replace(/^['\"]|['\"]$/g, "")
+    .replace(/^['"]|['"]$/g, "")
     .trim();
 
   if (vercelHost) {

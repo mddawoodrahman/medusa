@@ -9,7 +9,7 @@ const normalizeEnvValue = (value: string | undefined) => {
     return undefined;
   }
 
-  return trimmed.replace(/^['\"]|['\"]$/g, "").trim();
+  return trimmed.replace(/^['"]|['"]$/g, "").trim();
 };
 
 const getEnv = (name: string) => normalizeEnvValue(process.env[name]);

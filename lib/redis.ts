@@ -7,7 +7,7 @@ declare global {
 const createRedisClient = () => {
   const redisUrl = process.env.REDIS_URL
     ?.trim()
-    .replace(/^['\"]|['\"]$/g, "")
+    .replace(/^['"]|['"]$/g, "")
     .trim();
 
   if (!redisUrl) {
