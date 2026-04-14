@@ -1,5 +1,4 @@
 import { SignUp } from "@clerk/nextjs";
-import Link from "next/link";
 import { clerkAuthAppearance } from "../../clerk-appearance";
 
 const SignUpPage = () => (
@@ -25,16 +24,6 @@ const SignUpPage = () => (
         appearance={clerkAuthAppearance}
       />
     </div>
-
-    <p className="caption text-center text-light-200">
-      Already have an account?{" "}
-      <Link
-        href="/sign-in"
-        className="font-semibold text-brand transition-colors hover:text-brand-100"
-      >
-        Sign in
-      </Link>
-    </p>
   </div>
 );
 
