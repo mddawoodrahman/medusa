@@ -1,365 +1,420 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js" alt="Next.js 15" />
-<img src="https://img.shields.io/badge/React-19_RC-61DAFB?style=flat-square&logo=react" alt="React 19 RC" />
-<img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript" alt="TypeScript 5" />
-<img src="https://img.shields.io/badge/Appwrite-Cloud-FD366E?style=flat-square&logo=appwrite" alt="Appwrite Cloud" />
-<img src="https://img.shields.io/badge/Clerk-Auth-6C47FF?style=flat-square&logo=clerk" alt="Clerk Auth" />
-
-<br /><br />
-
 # Medusa
 
-**A secure, multi-user cloud file workspace for teams that need private-by-default file access.**
+**Secure, private-by-default file management for modern teams.**
 
-Upload, organize, preview, and share files through an authorization-first workflow. Medusa avoids public storage URLs and serves every file through a protected server-side route.
+A full-stack Next.js 15 application for authenticated uploads, protected streaming downloads, and controlled file sharing powered by Clerk, Appwrite, and Redis.
 
-[Live Demo](https://welovemedusa.vercel.app) | [Report Bug](../../issues) | [Request Feature](../../issues)
+[![CI](https://img.shields.io/github/actions/workflow/status/mddawoodrahman/medusa/ci-cd.yml?branch=main&label=CI)](https://github.com/mddawoodrahman/medusa/actions/workflows/ci-cd.yml)
+[![License: Apache-2.0](https://img.shields.io/github/license/mddawoodrahman/medusa)](LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Clerk](https://img.shields.io/badge/Clerk-Authentication-6C47FF)](https://clerk.com/)
+[![Appwrite](https://img.shields.io/badge/Appwrite-Cloud-FD366E?logo=appwrite&logoColor=white)](https://appwrite.io/)
+[![Redis](https://img.shields.io/badge/Redis-Distributed%20Layer-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![Docker](https://img.shields.io/badge/Docker-Production%20Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+
+[Live Demo](https://welovemedusa.vercel.app) • [Open Issues](../../issues) • [Contribute](#contributing)
+
+If this project helps you, please consider starring the repository and sharing it.
 
 </div>
 
 ---
 
-## Overview
+## Why Medusa?
 
-Medusa is a production-grade file management platform built with **Next.js 15 App Router**, **Clerk**, **Appwrite**, and **Redis**. It supports direct browser uploads through short-lived Appwrite credentials, private file delivery through a Next.js proxy route, and share management backed by Appwrite database and storage permissions.
+Most file apps either expose public URLs too early or force every upload/download through heavyweight backend proxying. That creates security risk, cost, or both.
 
-```text
-Browser -> Clerk Auth -> Next.js Server Actions -> Redis (rate limit/cache/counters) -> Appwrite Repositories -> Appwrite Cloud
-                  |
-                  v
-         Protected File Proxy -> Streamed Response (view/download/thumbnail)
-```
+Medusa solves this by combining:
 
-## Features
+- Direct browser uploads with short-lived scoped Appwrite tokens.
+- Server-authorized file delivery through protected Next.js routes.
+- Fine-grained sharing and permission synchronization.
+- Redis-backed distributed rate limiting, caching, and usage counters for horizontal scale.
 
-| Feature | Description |
-| --- | --- |
-| Clerk authentication | Route and API protection through Clerk middleware |
-| Direct browser uploads | Short-lived scoped Appwrite tokens avoid server-side upload proxying |
-| Protected file delivery | Downloads, previews, and thumbnails stream through server-side authorization |
-| File categorization | Files are grouped into documents, images, audio, video, and other |
-| Search and pagination | Debounced search with paginated file listing pages |
-| File sharing | Share by email with metadata updates and Appwrite Storage permission sync |
-| Dashboard analytics | Storage usage summary cards and recent-file activity |
-| Distributed rate limiting | Upload and download routes use Redis-backed fixed-window limits with user + IP scoping |
-| Redis caching | Cache-first reads for file metadata, file listings, and dashboard totals with mutation invalidation |
-| Usage counters | Per-user upload and download counters are tracked atomically for SaaS analytics and quotas |
-| Structured logging | Server-side request logging includes request IDs for traceability |
+This makes Medusa suitable for teams building secure internal tools, client portals, and SaaS products that require private file access by default.
+
+## Key Features
+
+- Private-by-default storage model: no public file URLs required for normal access.
+- Authenticated direct uploads: browser uploads directly to Appwrite after secure token issuance.
+- Protected streaming downloads: all reads pass through ownership/share authorization.
+- Rich file workflows: list, search, filter by type, rename, delete, share/unshare.
+- Distributed abuse protection: Redis-backed fixed-window limits using user and user+IP keys.
+- Smart caching layer: cache-first metadata, user file lists, and dashboard usage summaries.
+- SaaS analytics foundation: atomic Redis counters for uploads and downloads per user.
+- Production deployment support: standalone Next.js Docker image and optional Compose stack.
 
 ## Tech Stack
 
 | Layer | Technology |
 | --- | --- |
-| Framework | Next.js 15 App Router |
-| Runtime UI | React 19 RC |
+| Frontend + SSR | Next.js 15 App Router, React 19 RC |
 | Language | TypeScript 5 |
-| Auth | Clerk |
-| Distributed system layer | Redis (ioredis) |
-| Backend and storage | Appwrite Database, Storage, and Users |
-| Styling | Tailwind CSS, shadcn/ui, Radix UI |
+| AuthN/AuthZ | Clerk |
+| Data + Object Storage | Appwrite Database and Storage |
+| Distributed Systems | Redis via ioredis |
+| UI | Tailwind CSS, shadcn/ui, Radix UI |
 | Validation | Zod |
-| Testing | Jest, ts-jest |
-| Linting and formatting | ESLint, Prettier |
-| CI/CD | GitHub Actions |
+| Observability | Structured server logging with request IDs |
+| Testing | Jest + ts-jest (unit, integration, critical journeys) |
+| CI | GitHub Actions |
+| Containerization | Docker (multi-stage), Docker Compose |
 
-## Architecture
+## Architecture Overview
 
-### Request Flow
+### System Snapshot
 
 ```text
-Browser
-  -> Clerk Middleware
-  -> Next.js App Router
-  -> Server Actions / API Routes
-  -> Redis (rate limits, cache, usage counters)
-  -> Repository Layer
-  -> Appwrite Cloud
+Browser Client
+  -> Clerk Middleware (auth enforcement)
+  -> Next.js App Router (Server Actions + API routes)
+  -> Redis (rate limiting, caching, usage counters)
+  -> Appwrite (users, database, storage)
 ```
 
 ### Upload Flow
 
 ```text
-1. Client -> POST /api/upload/initiate with file metadata.
-2. Server -> Validates auth, applies rate limiting, and issues a short-lived Appwrite token.
-3. Browser -> Creates an Appwrite session and uploads directly to storage.
-4. Server Action -> Persists the file metadata document after upload completion.
+1) Client -> POST /api/upload/initiate
+2) Server -> validates auth, payload, and rate limits
+3) Server -> creates short-lived Appwrite token scoped to user identity
+4) Browser -> uploads directly to Appwrite Storage
+5) Server Action -> persists file metadata and invalidates related cache keys
 ```
 
-### Download and Thumbnail Flow
+### Download Flow
 
 ```text
-1. Client -> GET /api/files/download/[id]?mode=view|download|thumbnail
-2. Server -> Validates auth, applies rate limiting, and checks ownership/share access.
-3. Server -> Streams the file with private cache headers.
+1) Client -> GET /api/files/download/[id]?mode=view|download|thumbnail
+2) Server -> validates auth + access rights (owner or active share)
+3) Server -> applies Redis rate limit and records usage counter
+4) Server -> streams view/download/thumbnail from Appwrite with private cache headers
 ```
 
-## Repository Structure
+### Redis Usage
 
-```text
-.
-|-- app/
-|   |-- (auth)/          # Clerk sign-in and sign-up routes
-|   |-- (root)/          # Protected application routes
-|   `-- api/             # Upload initiation and protected file proxy routes
-|-- components/          # Shared UI components
-|-- constants/           # Application constants
-|-- hooks/               # React hooks
-|-- lib/
-|   |-- actions/         # Server Actions and domain workflows
-|   |-- appwrite/        # Appwrite config and clients
-|   |-- observability/   # Structured logging utilities
-|   |-- repositories/    # Appwrite data access layer
-|   `-- security/        # Rate limiting and security utilities
-|-- scripts/             # Appwrite bootstrap script
-|-- test/                # Unit, integration, and critical-journey tests
-`-- types/               # Shared TypeScript types
-```
+- Rate limiting keys:
+  - `upload:{userId}`
+  - `download:{userId}`
+  - `user:{userId}:ip:{ip}:upload`
+  - `user:{userId}:ip:{ip}:download`
+- Cache keys:
+  - `file:{fileId}`
+  - `user:{userId}:files:{fingerprint}`
+  - `dashboard:{userId}`
+- Usage counters:
+  - `user:{userId}:uploads_count`
+  - `user:{userId}:downloads_count`
 
-## Data Model
+## Screenshots
 
-### `users`
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `fullName` | string | Display name |
-| `email` | email | Share lookup and identity |
-| `avatar` | url | Profile image |
-| `clerkUserId` | string | Primary application identity key |
-
-### `files`
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `name` | string | File name |
-| `type` | string | `document`, `image`, `video`, `audio`, or `other` |
-| `extension` | string | Lowercase file extension |
-| `url` | url | Protected application URL |
-| `size` | integer | File size in bytes |
-| `clerkUserId` | string | Owner ID |
-| `ownerName` | string | Owner display-name snapshot |
-| `bucketField` | string | Appwrite Storage file ID |
-| `users` | string[] | Legacy share fallback |
-
-### `file_shares`
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `fileId` | string | File document ID |
-| `principal` | string | Shared `clerkUserId` or email |
-| `role` | string | Share role, currently `viewer` |
-| `status` | string | `active` or `inactive` |
-| `ownerId` | string | Owner `clerkUserId` |
-| `type` | string | Share strategy metadata |
-
-## Security Model
-
-- Clerk middleware protects application routes and API endpoints.
-- Upload initiation requires an authenticated Clerk session and a valid application user profile.
-- File delivery checks ownership or active share access before streaming content.
-- Appwrite Storage permissions are synchronized when files are shared or unshared.
-- Public storage read permissions are not granted; file access flows through the protected proxy.
-- Upload and download routes apply Redis-backed distributed rate limiting (with bounded local fallback if Redis is unavailable).
-
-## API Reference
-
-### `POST /api/upload/initiate`
-
-Returns short-lived Appwrite credentials for direct browser uploads.
-
-| Status | Condition |
+| Dashboard | File Library |
 | --- | --- |
-| `200` | Credentials issued |
-| `400` | Invalid payload |
-| `401` | Unauthenticated or missing application user profile |
-| `413` | File exceeds configured upload limit |
-| `429` | Rate limit exceeded |
+| ![Dashboard](public/assets/images/files.png) | ![Library](public/assets/images/files-2.png) |
 
-### `GET /api/files/download/[id]`
-
-Streams a file after server-side authorization.
-
-| Query parameter | Values | Description |
-| --- | --- | --- |
-| `mode` | `view`, `download`, `thumbnail` | Delivery mode |
-| `w` | integer | Thumbnail width, sanitized on the server |
-| `h` | integer | Thumbnail height, sanitized on the server |
-
-| Status | Condition |
+| Upload Experience | Profile/Workspace |
 | --- | --- |
-| `200` | File streamed successfully |
-| `400` | Thumbnail requested for a non-image file |
-| `401` | Unauthenticated or missing application user profile |
-| `403` | Access denied |
-| `404` | Storage object ID missing |
-| `429` | Rate limit exceeded |
+| ![Upload](public/assets/images/photo.png) | ![Avatar](public/assets/images/avatar.png) |
 
-## Local Development
+## Installation and Local Setup
 
 ### Prerequisites
 
-- Bun 1.1+ or Node.js 20+ with npm
-- Clerk application
-- Appwrite project and database
-- Appwrite API key with users, database, and storage scopes
-- Redis instance (local or managed, such as Azure Cache for Redis)
+- Bun 1.1+ or Node.js 20+
+- Clerk application (publishable + secret keys)
+- Appwrite project (database + bucket + API key)
+- Redis instance (local Docker Redis or managed Redis)
 
-### 1. Install Dependencies
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/mddawoodrahman/medusa.git
+cd medusa
+```
+
+### 2. Install dependencies
+
+Preferred:
 
 ```bash
 bun install
 ```
 
-or:
+Alternative:
 
 ```bash
 npm install
 ```
 
-### 2. Configure Environment
+### 3. Configure environment
 
 ```bash
 cp .env.example .env.local
 ```
 
-Then fill in the values listed in [Environment Variables](#environment-variables).
+Set all required variables from the table below.
 
-### 3. Bootstrap Appwrite Resources
+### 4. Bootstrap Appwrite collections and bucket
 
 ```bash
 node scripts/setup-appwrite.js
 ```
 
-The setup script creates or reuses the `users`, `files`, and `file_shares` collections, creates the storage bucket, and prints generated IDs to copy into `.env.local`.
+This script creates or reuses:
 
-### 4. Start the Development Server
+- `users` collection
+- `files` collection
+- `file_shares` collection
+- storage bucket
+
+### 5. Start the app
+
+Preferred:
 
 ```bash
 bun run dev
 ```
 
-or:
+Alternative:
 
 ```bash
 npm run dev
 ```
 
-### 5. Optional: Run App + Redis with Docker Compose
+Open `http://localhost:3000`.
+
+### Optional: run app + Redis via Docker Compose
 
 ```bash
 docker compose up --build
 ```
 
-This uses the app image and a Redis service defined in `docker-compose.yml`.
-
 ## Environment Variables
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `NEXT_PUBLIC_APPWRITE_ENDPOINT` | Yes | Appwrite endpoint URL |
-| `NEXT_PUBLIC_APPWRITE_PROJECT` | Yes | Appwrite project ID |
-| `NEXT_PUBLIC_APPWRITE_PROJECT_ID` | Optional | Backward-compatible Appwrite project ID alias |
+| `NEXT_PUBLIC_APPWRITE_ENDPOINT` | Yes | Appwrite API endpoint (for example `https://cloud.appwrite.io/v1`) |
+| `NEXT_PUBLIC_APPWRITE_PROJECT` | Yes* | Appwrite project ID |
+| `NEXT_PUBLIC_APPWRITE_PROJECT_ID` | Optional | Backward-compatible alias for project ID |
 | `NEXT_PUBLIC_APPWRITE_DATABASE` | Yes | Appwrite database ID |
 | `NEXT_PUBLIC_APPWRITE_USERS_COLLECTION` | Yes | `users` collection ID |
 | `NEXT_PUBLIC_APPWRITE_FILES_COLLECTION` | Yes | `files` collection ID |
 | `NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION` | Recommended | `file_shares` collection ID |
-| `NEXT_PUBLIC_APPWRITE_BUCKET` | Yes | Appwrite storage bucket ID |
-| `NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE` | Optional | Max upload bytes, default `52428800` |
+| `NEXT_PUBLIC_APPWRITE_BUCKET` | Yes | Appwrite bucket ID |
+| `NEXT_PUBLIC_APPWRITE_MAX_UPLOAD_SIZE` | Optional | Max upload bytes (default `52428800`) |
 | `NEXT_APPWRITE_KEY` | Yes | Appwrite server API key |
-| `REDIS_URL` | Recommended | Redis connection string (for example `redis://redis:6379` locally or `rediss://...` for managed TLS) |
+| `REDIS_URL` | Recommended | Redis URL (`redis://...` locally, `rediss://...` for managed TLS) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
 | `CLERK_SECRET_KEY` | Yes | Clerk secret key |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Sign-up route |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in path (default `/sign-in`) |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Sign-up path (default `/sign-up`) |
 
-## Scripts and Quality Gates
+`*` Either `NEXT_PUBLIC_APPWRITE_PROJECT` or `NEXT_PUBLIC_APPWRITE_PROJECT_ID` must be defined.
 
-| Script | Purpose |
-| --- | --- |
-| `dev` | Start the Next.js development server with Turbopack |
-| `typecheck` | Run the TypeScript compiler without emitting files |
-| `lint` | Run ESLint |
-| `test:unit` | Run unit-focused Jest tests |
-| `test:integration` | Run integration tests |
-| `test:e2e` | Run critical-journey Jest tests |
-| `test` | Run unit and integration tests |
-| `test:watch` | Run Jest in watch mode |
-| `build` | Create a production build |
-| `start` | Start the production server |
-| `ci:verify` | Run clean install, typecheck, lint, tests, and build |
-| `test:ci` | Run typecheck, lint, tests, and build |
+## API Reference
 
-## CI/CD
+### `POST /api/upload/initiate`
 
-The GitHub Actions workflow runs on:
+Issues short-lived upload credentials for direct browser upload.
 
-- Pushes to `main` and `dev`
-- Pull requests targeting `main`
+Request body:
 
-Pipeline:
-
-```text
-Install -> Typecheck -> Lint -> Test -> Build
+```json
+{
+  "fileId": "optional-string",
+  "fileName": "invoice.pdf",
+  "size": 102400
+}
 ```
 
-## Known Constraints
+Response highlights:
 
-- Dashboard storage usage uses a fixed 2 GB cap in application logic.
-- If `REDIS_URL` is not configured or Redis is unavailable, rate limiting falls back to bounded process memory.
-- `test:e2e` currently runs Jest route tests rather than browser-driven automation.
-- `scripts/setup-appwrite.js` is a bootstrap tool, not a versioned migration system.
-- React is pinned to RC builds while the project uses React 18 type packages.
+- upload endpoint/project/bucket/file context
+- token secret + expiry for temporary Appwrite session
+- rate-limit metadata (`remaining`, `resetMs`)
+
+Status codes:
+
+- `200` Success
+- `400` Invalid payload
+- `401` Unauthorized
+- `413` File too large
+- `429` Too many requests
+- `500` Internal error
+
+### `GET /api/files/download/[id]`
+
+Streams secure file content after authorization.
+
+Query params:
+
+- `mode`: `view` | `download` | `thumbnail`
+- `w`: thumbnail width (sanitized)
+- `h`: thumbnail height (sanitized)
+
+Status codes:
+
+- `200` Success
+- `400` Thumbnail requested for non-image file
+- `401` Unauthorized
+- `403` Forbidden
+- `404` Missing storage object
+- `429` Too many requests
+- `500` Internal error
+
+## Security Considerations
+
+- Route and API protection is enforced via Clerk middleware.
+- File access is authorized on the server for every download/preview request.
+- Storage objects remain private; access is mediated by protected routes.
+- Upload credentials are short-lived and scoped per authenticated user.
+- Rate limiting uses distributed Redis keys with user+IP dimensioning.
+- Download responses use private cache headers and sanitized content disposition.
+- Sharing updates synchronize metadata and storage permissions.
+
+## Performance Optimizations
+
+- Cache-first reads for expensive and frequent operations:
+  - file metadata (`300s` TTL)
+  - user file listings (`45s` TTL)
+  - dashboard aggregate usage (`60s` TTL)
+- Batched Redis operations via pipelines for reduced RTT.
+- Atomic Redis counters for high-throughput usage tracking.
+- Cache invalidation on upload, delete, rename, and share/unshare operations.
+- Next.js App Router server rendering with selective revalidation (`revalidateTag`, `revalidatePath`).
+
+## Deployment Guide
+
+### Option A: Vercel + Managed Services (recommended)
+
+1. Deploy the Next.js app to Vercel.
+2. Configure environment variables in Vercel project settings.
+3. Use managed Appwrite + Clerk + managed Redis.
+4. Set `REDIS_URL` to TLS-enabled managed endpoint (`rediss://...`) when required.
+
+### Option B: Linux Container Platforms (App Service / Container Apps)
+
+Use the included production Dockerfile:
+
+```bash
+docker build -t medusa:prod .
+docker run --rm -p 3000:3000 --env-file .env.local medusa:prod
+```
+
+For local distributed testing with Redis:
+
+```bash
+docker compose up --build
+```
+
+## Project Structure
+
+```text
+.
+|-- app/
+|   |-- (auth)/                    # Clerk auth routes
+|   |-- (root)/                    # Protected app pages
+|   `-- api/
+|       |-- upload/initiate/       # Direct-upload token issuing route
+|       `-- files/download/[id]/   # Secure stream/download/thumbnail route
+|-- components/                    # UI primitives and feature components
+|-- lib/
+|   |-- actions/                   # Server Actions
+|   |-- appwrite/                  # Appwrite client/config helpers
+|   |-- cache.ts                   # Redis caching + counters
+|   |-- redis.ts                   # Redis singleton client
+|   |-- repositories/              # Data access layer
+|   `-- security/rate-limit.ts     # Distributed fixed-window limiter
+|-- scripts/setup-appwrite.js      # Appwrite bootstrap script
+|-- test/                          # Unit, integration, e2e-style tests
+|-- Dockerfile                     # Production multi-stage image
+`-- docker-compose.yml             # Local app + Redis stack
+```
+
+## Developer Workflow
+
+Useful scripts:
+
+- `npm run dev` - start local development server
+- `npm run typecheck` - strict TypeScript checks
+- `npm run lint` - ESLint validation
+- `npm run test` - unit + integration tests
+- `npm run build` - production build
+- `npm run ci:verify` - CI-equivalent local verification
+
+## Contributing
+
+Contributions are welcome.
+
+1. Fork the repository.
+2. Create a feature branch (`feat/your-change`).
+3. Install dependencies and configure `.env.local`.
+4. Run quality checks:
+   - `npm run typecheck`
+   - `npm run lint`
+   - `npm run test`
+   - `npm run build`
+5. Open a pull request with clear context and screenshots/logs when relevant.
+
+Please prefer focused PRs, production-safe defaults, and tests for behavior changes.
+
+## License
+
+Licensed under the Apache License 2.0.
+
+See [LICENSE](LICENSE) for details.
 
 ## Roadmap
 
-### Priority 1: Reliability and Scale
+### Near-term
 
-- Precompute per-user storage aggregates to reduce dashboard scan cost.
-- Add plan-aware quota enforcement using Redis usage counters.
-- Introduce explicit Server Action result contracts for deterministic UI state.
+- Enforce plan-aware quotas using Redis usage counters.
+- Add more analytics endpoints for usage and throughput insights.
+- Expand integration tests around sharing and cache invalidation paths.
 
-### Priority 2: Quality and Correctness
+### Mid-term
 
-- Add browser-driven E2E tests for upload, share, preview, and download flows.
-- Replace the bootstrap-only setup script with a versioned migration workflow.
-- Optimize shared-file lookup paths for higher collaboration volume.
+- Browser-driven end-to-end test coverage for critical user journeys.
+- Optional OpenTelemetry tracing across API and Server Actions.
+- Background jobs for asynchronous file workflows and notifications.
 
-### Priority 3: Sustainability
+### Long-term
 
-- Stabilize dependency strategy around non-RC React releases.
-- Add distributed tracing and latency dashboards.
+- Multi-tenant administration and billing-ready governance controls.
+- Enterprise-grade audit trail and policy enforcement controls.
+- Richer collaboration roles beyond viewer-level sharing.
 
 ## Troubleshooting
 
-### Sign-in or Sign-up Does Not Work
+### `401 Unauthorized` on protected endpoints
 
-- Verify `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`.
-- Confirm `NEXT_PUBLIC_CLERK_SIGN_IN_URL` and `NEXT_PUBLIC_CLERK_SIGN_UP_URL` match the actual route paths.
-- Ensure auth routes are public in `middleware.ts`.
+- Verify Clerk keys and callback URLs.
+- Confirm middleware is active and routes are not incorrectly marked public.
 
-### Upload Initiation Returns `401`
+### Upload initiation fails
 
-- Confirm an active Clerk session exists in the browser.
-- Verify the `users` collection ID is set correctly.
-- Confirm the Appwrite API key has users, database, and storage scopes.
-- Check that user profile provisioning completed successfully.
+- Check Appwrite project/database/bucket IDs.
+- Verify `NEXT_APPWRITE_KEY` scopes include users, database, and storage.
+- Ensure payload includes valid `fileName` and positive `size`.
 
-### Download Returns `403`
+### `429 Too many requests`
 
-- Verify the requester owns the file or has an active share record.
-- Confirm `NEXT_PUBLIC_APPWRITE_FILE_SHARES_COLLECTION` is configured.
-- Verify storage permissions were updated correctly.
+- Confirm `REDIS_URL` is valid and reachable.
+- Review upload/download request bursts and client retry behavior.
 
-### Setup Script Fails
+### Download `403 Forbidden`
 
-- Confirm `.env.local` exists and all required values are set.
-- Ensure the target Appwrite database exists before running the script.
-- Verify the Appwrite API key includes users, database, and storage scopes.
+- Confirm ownership or active `file_shares` record exists.
+- Verify storage permissions were synchronized during sharing updates.
+
+### Redis not being used
+
+- Ensure `REDIS_URL` is set at runtime.
+- If unset/unreachable, the app falls back to bounded in-memory behavior.
 
 ---
 
-<div align="center">
-
-Built by [Md Dawood Rahman](https://github.com/mddawoodrahman) | [Live Demo](https://welovemedusa.vercel.app) | IIT Patna MCA '27
-
-</div>
+Built by [Md Dawood Rahman](https://github.com/mddawoodrahman) and contributors.
