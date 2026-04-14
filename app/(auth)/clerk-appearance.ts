@@ -30,7 +30,7 @@ export const clerkAuthAppearance = {
     formButtonPrimary:
       "mt-2 h-11 rounded-xl bg-brand text-white transition-colors hover:bg-brand-100",
     footer:
-      "mt-4 rounded-b-2xl border-t border-slate-200/80 bg-transparent pt-4 dark:border-white/10 [&>div:last-child]:hidden",
+      "mt-4 rounded-b-2xl border-t border-slate-200/80 bg-white pt-4 dark:border-white/10 dark:bg-dark-200 [&>div:last-child]:hidden",
     footerAction: "!bg-transparent pb-1",
     footerAction__signIn: "!bg-transparent pb-1",
     footerAction__signUp: "!bg-transparent pb-1",

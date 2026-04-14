@@ -1,4 +1,5 @@
-import { SignIn } from "@clerk/nextjs";
+import { ClerkLoaded, ClerkLoading, SignIn } from "@clerk/nextjs";
+import Link from "next/link";
 import { clerkAuthAppearance } from "../../clerk-appearance";
 
 const SignInPage = () => (
@@ -15,15 +16,36 @@ const SignInPage = () => (
       </p>
     </div>
 
-    <div className="rounded-[28px] border border-slate-200/80 bg-white/70 p-4 shadow-sm dark:border-white/10 dark:bg-dark-100/60 sm:p-5">
-      <SignIn
-        path="/sign-in"
-        routing="path"
-        signUpUrl="/sign-up"
-        forceRedirectUrl="/"
-        appearance={clerkAuthAppearance}
-      />
+    <div className="auth-signin-card rounded-[28px] border border-slate-200/80 bg-white/70 p-4 shadow-sm dark:border-white/10 dark:bg-dark-100/60 sm:p-5">
+      <ClerkLoading>
+        <div className="flex h-[320px] items-center justify-center rounded-2xl border border-slate-200/80 bg-white/80 dark:border-white/10 dark:bg-dark-100/70">
+          <div className="flex items-center gap-3 text-sm font-medium text-slate-500 dark:text-slate-300">
+            <span className="inline-block size-5 animate-spin rounded-full border-2 border-brand/30 border-t-brand" />
+            Preparing secure sign-in...
+          </div>
+        </div>
+      </ClerkLoading>
+
+      <ClerkLoaded>
+        <SignIn
+          path="/sign-in"
+          routing="path"
+          signUpUrl="/sign-up"
+          forceRedirectUrl="/"
+          appearance={clerkAuthAppearance}
+        />
+      </ClerkLoaded>
     </div>
+
+    <p className="caption text-center text-light-200">
+      Don&apos;t have an account?{" "}
+      <Link
+        href="/sign-up"
+        className="font-semibold text-brand transition-colors hover:text-brand-100"
+      >
+        Sign up
+      </Link>
+    </p>
   </div>
 );
 

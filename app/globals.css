@@ -483,10 +483,14 @@
     @apply bg-background text-foreground;
   }
 
-  .cl-footer,
-  .cl-footerAction,
-  .cl-footerAction__signIn,
-  .cl-footerAction__signUp {
-    background: transparent !important;
+  .auth-signin-card .cl-footer,
+  .auth-signup-card .cl-footer,
+  .auth-signin-card .cl-footerAction,
+  .auth-signup-card .cl-footerAction,
+  .auth-signin-card .cl-footerAction__signIn,
+  .auth-signup-card .cl-footerAction__signIn,
+  .auth-signin-card .cl-footerAction__signUp,
+  .auth-signup-card .cl-footerAction__signUp {
+    display: none !important;
   }
 }
