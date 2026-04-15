@@ -77,10 +77,20 @@ const FileUploader = ({ className }: Props) => {
           .json()
           .catch(() => ({ error: "Failed to initiate upload" }));
 
-        const message =
+        const baseMessage =
           typeof failureBody?.error === "string" && failureBody.error.length > 0
             ? failureBody.error
             : "Failed to initiate upload";
+
+        const requestId =
+          typeof failureBody?.requestId === "string" &&
+          failureBody.requestId.trim().length > 0
+            ? failureBody.requestId.trim()
+            : null;
+
+        const message = requestId
+          ? `${baseMessage} (request id: ${requestId})`
+          : baseMessage;
 
         throw new Error(message);
       }

@@ -618,6 +618,17 @@ For larger changes, open an issue first to discuss the approach.
 </details>
 
 <details>
+<summary><strong>Upload initiation returns <code>500</code> on Vercel</strong></summary>
+
+- Open Vercel Function logs and search for `Upload initiation blocked: missing runtime configuration` or `Upload backend configuration is invalid`.
+- Ensure these variables are present in Vercel: `NEXT_PUBLIC_APPWRITE_ENDPOINT`, `NEXT_PUBLIC_APPWRITE_PROJECT` (or `NEXT_PUBLIC_APPWRITE_PROJECT_ID`), `NEXT_PUBLIC_APPWRITE_BUCKET`, `NEXT_PUBLIC_APPWRITE_USERS_COLLECTION`, and `NEXT_APPWRITE_KEY`.
+- This project also accepts common aliases (`APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`, `APPWRITE_BUCKET_ID`, `APPWRITE_USERS_COLLECTION_ID`, `APPWRITE_API_KEY`) if your deployment already uses them.
+- Confirm the Appwrite API key has `users`, `databases`, and `storage` scopes.
+- Hit `/api/health/startup` on the deployed site to validate Appwrite bucket configuration and Redis connectivity.
+
+</details>
+
+<details>
 <summary><strong>File download returns <code>403</code></strong></summary>
 
 - Verify the requesting user owns the file or has an active record in the `file_shares` collection.

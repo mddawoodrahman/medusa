@@ -34,6 +34,17 @@ const ALLOWED_EXACT_MIME_TYPES = new Set([
   "application/rtf",
 ]);
 
+const REQUIRED_UPLOAD_CONFIG: Array<{ name: string; value: string | undefined }> = [
+  { name: "NEXT_PUBLIC_APPWRITE_ENDPOINT", value: appwriteConfig.endpointUrl },
+  { name: "NEXT_PUBLIC_APPWRITE_PROJECT", value: appwriteConfig.projectId },
+  { name: "NEXT_PUBLIC_APPWRITE_BUCKET", value: appwriteConfig.bucketId },
+  { name: "NEXT_APPWRITE_KEY", value: appwriteConfig.secretKey },
+  {
+    name: "NEXT_PUBLIC_APPWRITE_USERS_COLLECTION",
+    value: appwriteConfig.usersCollectionId,
+  },
+];
+
 const toErrorResponse = (
   status: number,
   error: string,
@@ -74,6 +85,9 @@ const getHttpStatusFromError = (error: unknown) => {
   return 500;
 };
 
+const getMissingUploadConfig = () =>
+  REQUIRED_UPLOAD_CONFIG.filter(({ value }) => !value).map(({ name }) => name);
+
 const getClientIp = (request: NextRequest) => {
   const forwardedFor = request.headers.get("x-forwarded-for");
 
@@ -89,6 +103,21 @@ export async function POST(request: NextRequest) {
   const context = { requestId, route: "/api/upload/initiate" };
 
   try {
+    const missingConfig = getMissingUploadConfig();
+
+    if (missingConfig.length > 0) {
+      logger.error("Upload initiation blocked: missing runtime configuration", {
+        ...context,
+        missingConfig,
+      });
+
+      return toErrorResponse(
+        500,
+        `Upload service is not configured (${missingConfig.join(", ")})`,
+        requestId,
+      );
+    }
+
     const { userId } = await auth();
 
     if (!userId) {
@@ -223,6 +252,18 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     logger.error("Upload initiation failed", context, error);
     const status = getHttpStatusFromError(error);
+
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      Number((error as { code?: unknown }).code) === 404
+    ) {
+      return toErrorResponse(
+        500,
+        "Upload backend configuration is invalid",
+        requestId,
+      );
+    }
 
     if (status === 401) {
       return toErrorResponse(401, "Unauthorized", requestId);

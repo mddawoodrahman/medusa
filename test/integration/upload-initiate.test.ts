@@ -30,7 +30,9 @@ jest.mock("@/lib/appwrite/config", () => ({
   appwriteConfig: {
     endpointUrl: "https://cloud.appwrite.io/v1",
     projectId: "project_123",
+    usersCollectionId: "users_collection_123",
     bucketId: "bucket_123",
+    secretKey: "appwrite_secret_123",
     maxUploadSizeBytes: 52_428_800,
   },
 }));
