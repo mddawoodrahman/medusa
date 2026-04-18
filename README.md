@@ -86,6 +86,8 @@ Medusa is purpose-built as a **production-grade reference implementation** — a
 - **Repository pattern** — Clean separation between domain logic and Appwrite data access
 - **Structured logging** — Request IDs threaded through server-side logs for traceability
 - **CI quality gate** — Typecheck → Lint → Test → Build pipeline runs on every push and pull request
+- **Kubernetes-ready deployment bundle** — Production manifests with overlays for local and cloud clusters
+- **Automated container delivery** — Optional GitHub Actions workflow builds, pushes, and deploys tagged images
 - **One-command bootstrap** — `setup-appwrite.js` provisions all Appwrite collections and the storage bucket automatically
 
 ---
@@ -104,8 +106,8 @@ Medusa is purpose-built as a **production-grade reference implementation** — a
 | Validation | **Zod** | Runtime schema validation on all API inputs |
 | Testing | **Jest** + **ts-jest** | Unit, integration, and critical-journey tests |
 | Linting & Formatting | **ESLint** + **Prettier** | Code quality enforcement |
-| CI/CD | **GitHub Actions** | Automated quality gate pipeline |
-| Deployment | **Vercel** | Edge-optimized Next.js hosting |
+| CI/CD | **GitHub Actions** | Quality gate pipeline + optional container build/push/deploy pipeline |
+| Deployment | **Vercel** or **Kubernetes** | Managed Vercel hosting or self-hosted clusters (Docker Desktop, Minikube, EKS, GKE, AKS) |
 
 ---
 
@@ -189,7 +191,17 @@ Medusa is purpose-built as a **production-grade reference implementation** — a
 │   └── security/            # Redis rate limiting and security utilities
 │
 ├── scripts/
-│   └── setup-appwrite.js    # One-time bootstrap: creates collections + bucket
+│   ├── setup-appwrite.js           # One-time bootstrap: creates collections + bucket
+│   └── configure-k8s-ingress.ps1   # Helper to patch ingress domain/cert values per cloud
+│
+├── .github/workflows/
+│   ├── ci-cd.yml                   # Typecheck + lint + test + build quality gate
+│   └── build-push-deploy-k8s.yml   # Container build/push + optional Kubernetes deploy
+│
+├── k8s/
+│   ├── base/                       # Base manifests consumed by overlays
+│   ├── overlays/                   # Cloud overlays (eks, gke, aks)
+│   └── README.md                   # Full Kubernetes operations guide
 │
 ├── test/
 │   ├── unit/                # Isolated unit tests
@@ -513,7 +525,18 @@ Copy `.env.example` to `.env.local` and set the following:
 
 ## Deployment
 
-### Deploying to Vercel (Recommended)
+### Deploying to Kubernetes (Production or self-hosted)
+
+Medusa includes a complete Kubernetes bundle under [`k8s/`](./k8s/) with:
+
+- Namespace, ConfigMap, Secrets template, app + Redis Deployments/Services
+- Startup/readiness/liveness probes, HPA, PDB, NetworkPolicy, PVC
+- Ingress overlays for EKS (ALB), GKE (GCE), and AKS (Application Gateway)
+- Optional deployment automation via GitHub Actions (`build-push-deploy-k8s.yml`)
+
+For full setup and operations commands, see [`k8s/README.md`](./k8s/README.md).
+
+### Deploying to Vercel (Quickest managed option)
 
 1. Push your repository to GitHub.
 2. Import the repo in [Vercel](https://vercel.com/new).
@@ -535,6 +558,11 @@ Copy `.env.example` to `.env.local` and set the following:
 GitHub Actions runs automatically on:
 - Pushes to `main` and `dev`
 - Pull requests targeting `main`
+
+Workflows included in this repository:
+
+- `ci-cd.yml` — quality gate (typecheck → lint → test → build)
+- `build-push-deploy-k8s.yml` — container build/push and optional Kubernetes deploy (gated by repository variables)
 
 ```
 Install dependencies
